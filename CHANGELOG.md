@@ -6,6 +6,12 @@ All notable changes to AceMate are listed here. The format follows
 
 ## [Unreleased]
 
+## [27.0.1] - 2026-11-22
+
+### Fixed
+
+- The API flow test gave up after about 24 seconds, which was too short for GitHub's slower runners to render PDF pages under the race detector. It now waits up to three minutes, so continuous integration no longer fails for that reason. No change to the app itself.
+
 ## [27.0.0] - 2026-11-21
 
 First public release.
@@ -22,5 +28,6 @@ First public release.
 - Health checks (`/healthz`, `/readyz`), a container image with a built-in health check, and `docker-compose.yml` with Postgres.
 - ESLint and Vitest for the UI, and a CI workflow that runs the Go tests, UI lint, typecheck and tests, and builds the image.
 
-[Unreleased]: https://github.com/andriantam/ace-mate/compare/v27.0.0...HEAD
+[Unreleased]: https://github.com/andriantam/ace-mate/compare/v27.0.1...HEAD
+[27.0.1]: https://github.com/andriantam/ace-mate/compare/v27.0.0...v27.0.1
 [27.0.0]: https://github.com/andriantam/ace-mate/releases/tag/v27.0.0
