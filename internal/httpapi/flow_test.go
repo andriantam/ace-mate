@@ -42,6 +42,10 @@ func (profiler) Complete(context.Context, llm.Request) (string, error) {
 
 const origin = "http://localhost:3000"
 
+// How long a test waits for background work. Rendering PDF pages under the race detector on
+// a small CI machine is slow, so this is generous; a real hang still fails.
+const waitLimit = 3 * time.Minute
+
 type client struct {
 	t      *testing.T
 	h      http.Handler
@@ -80,7 +84,7 @@ func (c *client) add(body []byte, ctype string) string {
 func (c *client) waitDone(id string) (string, map[string]any) {
 	var steps []string
 	next := 0
-	for i := 0; i < 200; i++ {
+	for deadline := time.Now().Add(waitLimit); time.Now().Before(deadline); {
 		var p struct {
 			Events []map[string]any
 			Next   int
@@ -263,7 +267,8 @@ func TestConsentAndResumeFlow(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &job)
 	var jobSteps []string
 	var jobEnd map[string]any
-	for next, i := 0, 0; i < 400 && jobEnd == nil; i++ {
+	next := 0
+	for deadline := time.Now().Add(waitLimit); jobEnd == nil && time.Now().Before(deadline); {
 		var p struct {
 			Events []map[string]any
 			Next   int
