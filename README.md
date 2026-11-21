@@ -43,7 +43,7 @@ The frontend, backend and database schema live in one repository and ship as one
 
 ## Install and set up
 
-You need **Go 1.26+** and **Node 22+** (Node only builds the UI).
+You need **Go 1.27+** and **Node 22.13+** (Node only builds the UI).
 
 ```bash
 git clone https://github.com/<you>/ace-mate.git
@@ -148,7 +148,7 @@ For UI hot reload, run `make dev` in one terminal and `cd web && npm run dev` in
 AceMate is one binary that needs Postgres. Use a container host or a VM, not serverless functions: the server runs background workers.
 
 ```bash
-docker build --build-arg VERSION=27.0.1 -t acemate .
+docker build --build-arg VERSION=27.1.0 -t acemate .
 docker run -p 8080:8080 --env-file prod.env acemate
 ```
 

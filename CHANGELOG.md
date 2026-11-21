@@ -6,6 +6,19 @@ All notable changes to AceMate are listed here. The format follows
 
 ## [Unreleased]
 
+## [27.1.0] - unreleased
+
+### Changed
+
+- **Building from source now needs Go 1.27 or newer and Node 22.13 or newer** (Node 24 and later also work). The container image now builds with Go 1.27 and Node 26.
+- Updated the UI's development tools: ESLint 10, Vitest 5, jsdom 31 and TypeScript 7. TypeScript 7 does the type-checking. The linter keeps using the TypeScript 6 API through Microsoft's compatibility package (`@typescript/typescript6`), because typescript-eslint doesn't support TypeScript 7 yet.
+- Updated the GitHub Actions in CI: checkout 7, setup-node 7 and setup-go 7.
+- The UI test settings moved into `vite.config.ts`, and `vitest.config.ts` is gone.
+
+### Security
+
+- Vitest 5 replaces Vitest 3.2.7. Two of that version's test-runner dependencies (tinypool and @vitest/mocker) had published advisories, two of them rated critical. They affected development tooling only, not the app or its production dependencies. `npm audit` now reports no vulnerabilities.
+
 ## [27.0.1] - 2026-11-22
 
 ### Fixed
@@ -28,6 +41,7 @@ First public release.
 - Health checks (`/healthz`, `/readyz`), a container image with a built-in health check, and `docker-compose.yml` with Postgres.
 - ESLint and Vitest for the UI, and a CI workflow that runs the Go tests, UI lint, typecheck and tests, and builds the image.
 
-[Unreleased]: https://github.com/andriantam/ace-mate/compare/v27.0.1...HEAD
+[Unreleased]: https://github.com/andriantam/ace-mate/compare/v27.1.0...HEAD
+[27.1.0]: https://github.com/andriantam/ace-mate/compare/v27.0.1...v27.1.0
 [27.0.1]: https://github.com/andriantam/ace-mate/compare/v27.0.0...v27.0.1
 [27.0.0]: https://github.com/andriantam/ace-mate/releases/tag/v27.0.0

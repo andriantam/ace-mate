@@ -1,17 +1,17 @@
 # AceMate: build the UI, then one static Go binary with the UI embedded, then a minimal
 # runtime image (no shell, runs as a non-root user).
 #
-#   docker build --build-arg VERSION=27.0.1 -t acemate .
+#   docker build --build-arg VERSION=27.1.0 -t acemate .
 #   docker compose up            # with Postgres, see docker-compose.yml
 
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
