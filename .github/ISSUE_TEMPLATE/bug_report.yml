@@ -28,7 +28,7 @@ body:
     attributes:
       label: AceMate version
       description: Shown in the page footer, and at `/healthz`.
-      placeholder: "27.0.0"
+      placeholder: "27.0.1"
     validations:
       required: true
   - type: dropdown
