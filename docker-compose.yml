@@ -1,0 +1,48 @@
+# Run AceMate and Postgres together on your machine:
+#
+#   cp .env.example .env      # add your sign-in and AI model settings, and set
+#                             # BASE_URL=http://localhost:8080 (this file serves port 8080)
+#   docker compose up --build
+#
+# Then open http://localhost:8080. For a public deployment, use a managed Postgres and
+# set APP_ENV=production with an https BASE_URL (see README, Deploy).
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-27.0.0}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Local defaults. The database connection always points at the db service below.
+      APP_ENV: ${APP_ENV:-development}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      PORT: "8080"
+      DATABASE_URL: postgres://acemate:acemate@db:5432/acemate?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: acemate
+      POSTGRES_PASSWORD: acemate # local only: the database port is not published
+      POSTGRES_DB: acemate
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acemate -d acemate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

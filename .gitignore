@@ -1,0 +1,16 @@
+# build output
+bin/
+web/dist/*
+!web/dist/.gitkeep
+web/node_modules/
+
+# local state and secrets
+.data/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# test coverage
+web/coverage/

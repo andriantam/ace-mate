@@ -1,0 +1,10 @@
+.git
+.github
+.data
+bin
+web/node_modules
+web/dist
+web/coverage
+.env*
+*.log
+docs/screenshots
