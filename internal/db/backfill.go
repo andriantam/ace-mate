@@ -7,16 +7,72 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 )
 
-const backfillName = "0003_encrypt_columns.backfill"
+const (
+	backfillName      = "0003_encrypt_columns.backfill"
+	usersBackfillName = "0004_encrypt_users.backfill"
+)
 
 func (d *DB) encryptExisting(ctx context.Context) error {
+	if err := d.encryptColumns(ctx); err != nil {
+		return err
+	}
+	return d.encryptUsers(ctx)
+}
+
+// encryptUsers encrypts the sign-in details of users saved before they were encrypted.
+func (d *DB) encryptUsers(ctx context.Context) error {
+	var done bool
+	if err := d.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM _migrations WHERE name=$1)`, usersBackfillName).Scan(&done); err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+	type row struct {
+		id string
+		p  personal
+	}
+	rows, err := d.Pool.Query(ctx, `SELECT id,email,name,image,given_name,family_name,birthday FROM users WHERE personal_enc IS NULL`)
+	if err != nil {
+		return err
+	}
+	users, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
+		var x row
+		return x, r.Scan(&x.id, &x.p.Email, &x.p.Name, &x.p.Image, &x.p.GivenName, &x.p.FamilyName, &x.p.Birthday)
+	})
+	if err != nil {
+		return err
+	}
+	for _, x := range users {
+		s, err := d.sealerFor(ctx, x.id)
+		if err != nil {
+			return err
+		}
+		enc, err := s.json("users.personal", x.id, x.p)
+		if err != nil {
+			return err
+		}
+		if _, err := d.Pool.Exec(ctx, `UPDATE users SET personal_enc=$2, email='', name='', image='', given_name='', family_name='', birthday=''
+			WHERE id=$1 AND personal_enc IS NULL`, x.id, enc); err != nil {
+			return err
+		}
+	}
+	if _, err := d.Pool.Exec(ctx, `INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT DO NOTHING`, usersBackfillName); err != nil {
+		return err
+	}
+	if len(users) > 0 {
+		slog.Info("encryption: encrypted existing sign-in details", "users", len(users))
+	}
+	return nil
+}
+
+func (d *DB) encryptColumns(ctx context.Context) error {
 	var done bool
 	if err := d.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM _migrations WHERE name=$1)`, backfillName).Scan(&done); err != nil {
 		return err
@@ -169,8 +225,8 @@ func (d *DB) encryptUserRows(ctx context.Context, userID string) (int, error) {
 	return n, err
 }
 
-// encryptTaskRows encrypts queued uploads and progress messages. These tables are only
-// used by the server's own code, so they are read without a user context.
+// encryptTaskRows encrypts queued uploads. The task table is only used by the server's own
+// code, so it is read without a user context.
 func (d *DB) encryptTaskRows(ctx context.Context) (int, error) {
 	type row struct {
 		id, userID string
@@ -203,35 +259,5 @@ func (d *DB) encryptTaskRows(ctx context.Context) (int, error) {
 		n++
 	}
 
-	type ev struct {
-		id             int64
-		taskID, userID string
-		data           json.RawMessage
-	}
-	rows, err = d.Pool.Query(ctx, `SELECT e.id, e.task_id::text, t.user_id, e.data FROM task_event e JOIN task t ON t.id=e.task_id WHERE e.data IS NOT NULL`)
-	if err != nil {
-		return n, err
-	}
-	events, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (ev, error) {
-		var x ev
-		return x, r.Scan(&x.id, &x.taskID, &x.userID, &x.data)
-	})
-	if err != nil {
-		return n, err
-	}
-	for _, x := range events {
-		s, err := d.sealerFor(ctx, x.userID)
-		if err != nil {
-			return n, err
-		}
-		enc, err := s.bytes("task_event.data", x.taskID, x.data)
-		if err != nil {
-			return n, err
-		}
-		if _, err := d.Pool.Exec(ctx, `UPDATE task_event SET data_enc=COALESCE(data_enc,$2), data=NULL WHERE id=$1`, x.id, enc); err != nil {
-			return n, err
-		}
-		n++
-	}
 	return n, nil
 }

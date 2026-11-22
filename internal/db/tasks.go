@@ -55,11 +55,7 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 		return "", err
 	}
 	if first != nil {
-		ev, err := s.json("task_event.data", id, first)
-		if err != nil {
-			return "", err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO task_event (task_id,data_enc) VALUES ($1,$2)`, id, ev); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO task_event (task_id,data) VALUES ($1,$2)`, id, first); err != nil {
 			return "", err
 		}
 	}
@@ -112,19 +108,7 @@ func (d *DB) Renew(ctx context.Context, id string, lease time.Duration) error {
 
 // Emit records a progress event for a task.
 func (d *DB) Emit(ctx context.Context, taskID string, ev map[string]any) error {
-	var userID string
-	if err := d.Pool.QueryRow(ctx, `SELECT user_id FROM task WHERE id=$1`, taskID).Scan(&userID); err != nil {
-		return err
-	}
-	s, err := d.sealerFor(ctx, userID)
-	if err != nil {
-		return err
-	}
-	data, err := s.json("task_event.data", taskID, ev)
-	if err != nil {
-		return err
-	}
-	_, err = d.Pool.Exec(ctx, `INSERT INTO task_event (task_id,data_enc) VALUES ($1,$2)`, taskID, data)
+	_, err := d.Pool.Exec(ctx, `INSERT INTO task_event (task_id,data) VALUES ($1,$2)`, taskID, ev)
 	return err
 }
 
@@ -172,26 +156,16 @@ func (d *DB) Progress(ctx context.Context, userID, subject string, after int64) 
 		return out, err
 	}
 	out.Found = true
-	s, err := d.sealerFor(ctx, userID)
-	if err != nil {
-		return out, err
-	}
-	rows, err := d.Pool.Query(ctx, `SELECT id, data_enc, data FROM task_event WHERE task_id=$1 AND id > $2 ORDER BY id LIMIT 200`, taskID, after)
+	rows, err := d.Pool.Query(ctx, `SELECT id, data FROM task_event WHERE task_id=$1 AND id > $2 ORDER BY id LIMIT 200`, taskID, after)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
-		var enc []byte
 		var data json.RawMessage
-		if err := rows.Scan(&id, &enc, &data); err != nil {
+		if err := rows.Scan(&id, &data); err != nil {
 			return out, err
-		}
-		if enc != nil {
-			if data, err = s.openBytes("task_event.data", taskID, enc); err != nil {
-				return out, err
-			}
 		}
 		out.Events = append(out.Events, data)
 		out.Next = id

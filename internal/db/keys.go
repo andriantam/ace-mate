@@ -68,19 +68,20 @@ type execer interface {
 
 // insertUserKey creates and stores a new wrapped key for userID, unless one exists.
 // q is the pool, or the transaction that creates the user.
-func (d *DB) insertUserKey(ctx context.Context, q execer, userID string) error {
+// It returns the new key, which is the stored one only when the user had none (always so
+// for a user created in the same transaction).
+func (d *DB) insertUserKey(ctx context.Context, q execer, userID string) ([]byte, error) {
 	dek, err := crypt.NewDataKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	v, wrapped, err := d.keys.WrapUserKey(userID, dek)
-	clear(dek)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = q.Exec(ctx, `INSERT INTO user_key (user_id, kek_version, wrapped) VALUES ($1,$2,$3)
 		ON CONFLICT (user_id) DO NOTHING`, userID, int64(v), wrapped)
-	return err
+	return dek, err
 }
 
 // UserKey returns the user's unwrapped data key, creating it if the user has none yet.
@@ -99,7 +100,7 @@ func (d *DB) UserKey(ctx context.Context, userID string) ([]byte, error) {
 		if errors.Is(err, pgx.ErrNoRows) && attempt == 0 {
 			// An account created before keys existed. The users foreign key makes this fail
 			// for a deleted user instead of creating an orphan key.
-			if err := d.insertUserKey(ctx, d.Pool, userID); err != nil {
+			if _, err := d.insertUserKey(ctx, d.Pool, userID); err != nil {
 				return nil, err
 			}
 			continue
@@ -130,7 +131,7 @@ func (d *DB) prepareUserKeys(ctx context.Context) error {
 		return err
 	}
 	for _, id := range missing {
-		if err := d.insertUserKey(ctx, d.Pool, id); err != nil {
+		if _, err := d.insertUserKey(ctx, d.Pool, id); err != nil {
 			return err
 		}
 	}

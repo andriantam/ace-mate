@@ -58,9 +58,13 @@ func (d *DB) UpsertIdentity(ctx context.Context, in Identity) (string, error) {
 	}
 	defer tx.Rollback(ctx)
 	var id string
+	var dek []byte // the user's data key
 	err = tx.QueryRow(ctx, `SELECT user_id FROM accounts WHERE provider=$1 AND subject=$2`, in.Provider, in.Subject).Scan(&id)
 	switch {
 	case err == nil:
+		if dek, err = d.UserKey(ctx, id); err != nil {
+			return "", err
+		}
 	case errors.Is(err, pgx.ErrNoRows):
 		id = newID()
 		if _, err := tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1)`, id); err != nil {
@@ -70,20 +74,60 @@ func (d *DB) UpsertIdentity(ctx context.Context, in Identity) (string, error) {
 			return "", err
 		}
 		// The user's data key is created with the account, in the same transaction.
-		if err := d.insertUserKey(ctx, tx, id); err != nil {
+		if dek, err = d.insertUserKey(ctx, tx, id); err != nil {
 			return "", err
 		}
 	default:
 		return "", err
 	}
+	s := sealer{dek: dek, userID: id}
+	p := personal{Email: in.Email, Name: in.Name, Image: in.Image, GivenName: in.GivenName, FamilyName: in.FamilyName, Birthday: in.Birthday}
 	// The birthday is only overwritten when the provider shared one this time, so turning
 	// the feature off later doesn't silently erase it (deleting the account does).
-	if _, err := tx.Exec(ctx, `UPDATE users SET email=$2, name=$3, image=$4, given_name=$5, family_name=$6, locale=$7,
-		email_verified=$8, birthday=CASE WHEN $9 <> '' THEN $9 ELSE birthday END WHERE id=$1`,
-		id, in.Email, in.Name, in.Image, in.GivenName, in.FamilyName, in.Locale, in.EmailVerified, in.Birthday); err != nil {
+	if p.Birthday == "" {
+		var enc []byte
+		var plain string
+		if err := tx.QueryRow(ctx, `SELECT personal_enc, birthday FROM users WHERE id=$1`, id).Scan(&enc, &plain); err != nil {
+			return "", err
+		}
+		old, err := openPersonal(s, enc, personal{Birthday: plain})
+		if err != nil {
+			return "", err
+		}
+		p.Birthday = old.Birthday
+	}
+	enc, err := s.json("users.personal", id, p)
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET personal_enc=$2, locale=$3, email_verified=$4,
+		email='', name='', image='', given_name='', family_name='', birthday='' WHERE id=$1`,
+		id, enc, in.Locale, in.EmailVerified); err != nil {
 		return "", err
 	}
 	return id, tx.Commit(ctx)
+}
+
+// personal is what a sign-in provider shares about the user, stored encrypted in
+// users.personal_enc.
+type personal struct {
+	Email      string `json:"email,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Image      string `json:"image,omitempty"`
+	GivenName  string `json:"givenName,omitempty"`
+	FamilyName string `json:"familyName,omitempty"`
+	Birthday   string `json:"birthday,omitempty"`
+}
+
+// openPersonal decrypts users.personal_enc. plain holds the plaintext columns, used for a
+// row not yet encrypted.
+func openPersonal(s sealer, enc []byte, plain personal) (personal, error) {
+	var p personal
+	ok, err := s.openJSON("users.personal", s.userID, enc, &p)
+	if err != nil || !ok {
+		return plain, err
+	}
+	return p, nil
 }
 
 // AcceptTerms records acceptance of a terms version and the separate marketing choice.
@@ -121,18 +165,29 @@ func (d *DB) CreateSession(ctx context.Context, userID string) (string, time.Tim
 func (d *DB) UserBySession(ctx context.Context, token string) (*User, error) {
 	var u User
 	var exp time.Time
+	var enc []byte
+	var plain personal
 	err := d.Pool.QueryRow(ctx, `
-		SELECT u.id,u.email,u.name,u.image,u.given_name,u.family_name,u.locale,u.birthday,u.email_verified,
+		SELECT u.id,u.personal_enc,u.email,u.name,u.image,u.given_name,u.family_name,u.birthday,u.locale,u.email_verified,
 		       u.terms_version,u.terms_accepted_at,u.marketing_opt_in,s.expires_at
 		FROM sessions s JOIN users u ON u.id=s.user_id
-		WHERE s.token_hash=$1 AND s.expires_at > now()`, hashToken(token)).Scan(&u.ID, &u.Email, &u.Name, &u.Image,
-		&u.GivenName, &u.FamilyName, &u.Locale, &u.Birthday, &u.EmailVerified, &u.TermsVersion, &u.TermsAcceptedAt, &u.MarketingOptIn, &exp)
+		WHERE s.token_hash=$1 AND s.expires_at > now()`, hashToken(token)).Scan(&u.ID, &enc, &plain.Email, &plain.Name, &plain.Image,
+		&plain.GivenName, &plain.FamilyName, &plain.Birthday, &u.Locale, &u.EmailVerified, &u.TermsVersion, &u.TermsAcceptedAt, &u.MarketingOptIn, &exp)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
+	s, err := d.sealerFor(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	p, err := openPersonal(s, enc, plain)
+	if err != nil {
+		return nil, err
+	}
+	u.Email, u.Name, u.Image, u.GivenName, u.FamilyName, u.Birthday = p.Email, p.Name, p.Image, p.GivenName, p.FamilyName, p.Birthday
 	if time.Until(exp) < SessionTTL-sessionSlide {
 		_, _ = d.Pool.Exec(ctx, `UPDATE sessions SET expires_at=$2 WHERE token_hash=$1`, hashToken(token), time.Now().Add(SessionTTL))
 	}

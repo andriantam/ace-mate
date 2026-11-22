@@ -7,7 +7,8 @@
 -- encrypted copy is written.
 --
 -- Left in plaintext on purpose: ids, statuses, timestamps, error messages, the job title
--- and company (shown and sorted in the jobs list), and the document kind.
+-- and company (shown and sorted in the jobs list), the document kind, and the progress
+-- messages of background tasks (short-lived: deleted an hour after the task finishes).
 
 ALTER TABLE profile ADD COLUMN IF NOT EXISTS data_enc bytea;
 ALTER TABLE profile ALTER COLUMN data DROP NOT NULL;
@@ -23,7 +24,5 @@ ALTER TABLE job ADD COLUMN IF NOT EXISTS jd_enc      bytea;
 ALTER TABLE job ADD COLUMN IF NOT EXISTS journey_enc bytea;
 ALTER TABLE job ADD COLUMN IF NOT EXISTS people_enc  bytea;
 
--- Uploaded files waiting to be read, and the progress messages shown while a task runs.
+-- Uploaded files (resumes) waiting to be read.
 ALTER TABLE task ADD COLUMN IF NOT EXISTS input_enc bytea;
-ALTER TABLE task_event ADD COLUMN IF NOT EXISTS data_enc bytea;
-ALTER TABLE task_event ALTER COLUMN data DROP NOT NULL;

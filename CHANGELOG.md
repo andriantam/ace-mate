@@ -12,7 +12,8 @@ All notable changes to AceMate are listed here. The format follows
 - Deleting an account deletes the user's key first.
 - Master keys can be rotated: add a new version to `ENCRYPTION_KEYS` and restart. Users' keys are re-encrypted with the newest master key at startup, and existing users without a key get one.
 - In development, without `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key`.
-- Each user's personal content is now stored encrypted with their own key: the profile, every document's name, link, extracted details and cross-check, each job's link, notes, posting text, journey and person cards, uploaded files waiting to be read, and the progress messages shown while a task runs. Each value is tied to its row, so a value copied elsewhere can't be decrypted. The job title and company stay readable, so the jobs list can show and sort them.
+- Each user's personal content is now stored encrypted with their own key: the profile, every document's name, link, extracted details and cross-check, each job's link, notes, posting text, journey and person cards, and uploaded files waiting to be read. Each value is tied to its row, so a value copied elsewhere can't be decrypted. The job title and company stay readable, so the jobs list can show and sort them.
+- The personal details your sign-in provider shares (email, name, photo link and birthday) are stored encrypted too.
 - Data saved by an earlier version is encrypted automatically at the first start, and the readable copy is cleared. Nobody has to sign up again.
 
 ## [27.0.1] - 2026-11-22

@@ -44,7 +44,7 @@ func rawTables(t *testing.T, d *db.DB, userID string) string {
 		t.Fatal(err)
 	}
 	read(d.Pool.Query(ctx, `SELECT row_to_json(x)::text FROM task x`))
-	read(d.Pool.Query(ctx, `SELECT row_to_json(x)::text FROM task_event x`))
+	read(d.Pool.Query(ctx, `SELECT row_to_json(x)::text FROM users x`))
 	return b.String()
 }
 
@@ -56,7 +56,11 @@ func journeyWith(s string) *model.Journey {
 func TestColumnsAreEncrypted(t *testing.T) {
 	ctx := context.Background()
 	d := openTestDB(t)
-	u, _ := d.UpsertOAuthUser(ctx, "google", "sub-enc", "enc@example.com", "Enc", "")
+	u, err := d.UpsertIdentity(ctx, db.Identity{Provider: "google", Subject: "sub-enc", Email: secret + "@example.com",
+		Name: "Name " + secret, GivenName: secret, FamilyName: secret, Image: "https://img.example.com/" + secret, Birthday: "1990-01-02", Locale: "en"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := d.UpsertProfile(ctx, u, model.Profile{Headline: "Headline " + secret}); err != nil {
 		t.Fatal(err)
@@ -120,15 +124,39 @@ func TestColumnsAreEncrypted(t *testing.T) {
 	if len(pr.Events) != 1 || !strings.Contains(string(pr.Events[0]), secret) {
 		t.Fatalf("progress: %+v", pr)
 	}
-	if err := d.Emit(ctx, task.ID, map[string]any{"type": "done", "detail": secret}); err != nil {
+	if err := d.Emit(ctx, task.ID, map[string]any{"type": "done"}); err != nil {
 		t.Fatal(err)
 	}
 	if pr, _ = d.Progress(ctx, u, doc, pr.Next); len(pr.Events) != 1 {
 		t.Fatalf("emitted event: %+v", pr)
 	}
-	if raw := rawTables(t, d, u); strings.Contains(raw, secret) {
-		t.Fatal("emitted events must be encrypted too")
-	}
+
+	t.Run("sign-in details", func(t *testing.T) {
+		tok, _, _ := d.CreateSession(ctx, u)
+		su, err := d.UserBySession(ctx, tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if su.Email != secret+"@example.com" || su.Name != "Name "+secret || su.GivenName != secret || su.FamilyName != secret ||
+			su.Image != "https://img.example.com/"+secret || su.Birthday != "1990-01-02" || su.Locale != "en" {
+			t.Fatalf("session user: %+v", su)
+		}
+		// Signing in again without a birthday keeps the one we have.
+		if _, err := d.UpsertIdentity(ctx, db.Identity{Provider: "google", Subject: "sub-enc", Email: "new-" + secret + "@example.com", Name: "Renamed"}); err != nil {
+			t.Fatal(err)
+		}
+		su, _ = d.UserBySession(ctx, tok)
+		if su.Email != "new-"+secret+"@example.com" || su.Name != "Renamed" || su.Birthday != "1990-01-02" {
+			t.Fatalf("after signing in again: %+v", su)
+		}
+		ex, err := d.ExportAll(ctx, u)
+		if err != nil || ex.Account.Email != su.Email || ex.Account.Birthday != "1990-01-02" {
+			t.Fatalf("export: %+v %v", ex.Account, err)
+		}
+		if raw := rawTables(t, d, u); strings.Contains(raw, secret) || strings.Contains(raw, "1990-01-02") {
+			t.Fatal("sign-in details must be encrypted")
+		}
+	})
 
 	t.Run("a value moved to another row does not decrypt", func(t *testing.T) {
 		other, _ := d.InsertJob(ctx, u, db.NewJob{Title: "Other"})
@@ -161,6 +189,10 @@ func TestExistingDataIsEncryptedAtStartup(t *testing.T) {
 	u, _ := d.UpsertOAuthUser(ctx, "google", "sub-old", "old@example.com", "Old", "")
 
 	// Rows as an earlier version wrote them: plaintext only.
+	if _, err := d.Pool.Exec(ctx, `UPDATE users SET personal_enc=NULL, email=$2, name=$3, birthday='1990-01-02' WHERE id=$1`,
+		u, secret+"@example.com", "Name "+secret); err != nil {
+		t.Fatal(err)
+	}
 	var docID, jobID string
 	err = d.WithUser(ctx, u, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO profile (user_id,data) VALUES ($1,$2)`, u, model.Profile{Headline: secret}); err != nil {
@@ -187,7 +219,11 @@ func TestExistingDataIsEncryptedAtStartup(t *testing.T) {
 	if p, _ := d.GetProfile(ctx, u); p == nil || p.Data.Headline != secret {
 		t.Fatal("plaintext rows must read until they are encrypted")
 	}
-	if _, err := d.Pool.Exec(ctx, `DELETE FROM _migrations WHERE name='0003_encrypt_columns.backfill'`); err != nil {
+	tok, _, _ := d.CreateSession(ctx, u)
+	if su, _ := d.UserBySession(ctx, tok); su == nil || su.Email != secret+"@example.com" {
+		t.Fatal("plaintext sign-in details must read until they are encrypted")
+	}
+	if _, err := d.Pool.Exec(ctx, `DELETE FROM _migrations WHERE name LIKE '%.backfill'`); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()
@@ -217,5 +253,9 @@ func TestExistingDataIsEncryptedAtStartup(t *testing.T) {
 	task, _ := d.Claim(ctx, []string{"document"}, 60e9)
 	if task == nil || string(task.Input) != secret {
 		t.Fatalf("task: %+v", task)
+	}
+	su, err := d.UserBySession(ctx, tok)
+	if err != nil || su.Email != secret+"@example.com" || su.Name != "Name "+secret || su.Birthday != "1990-01-02" {
+		t.Fatalf("sign-in details after startup: %+v %v", su, err)
 	}
 }
