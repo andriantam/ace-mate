@@ -69,6 +69,10 @@ func (d *DB) UpsertIdentity(ctx context.Context, in Identity) (string, error) {
 		if _, err := tx.Exec(ctx, `INSERT INTO accounts (provider,subject,user_id) VALUES ($1,$2,$3)`, in.Provider, in.Subject, id); err != nil {
 			return "", err
 		}
+		// The user's data key is created with the account, in the same transaction.
+		if err := d.insertUserKey(ctx, tx, id); err != nil {
+			return "", err
+		}
 	default:
 		return "", err
 	}
@@ -141,9 +145,22 @@ func (d *DB) DeleteSession(ctx context.Context, token string) error {
 }
 
 // DeleteUser removes the user; profile, jobs, progress, sessions and accounts cascade.
+// Their data key is deleted first, explicitly, and dropped from memory, so anything
+// encrypted under it (including copies in backups) can no longer be decrypted.
 func (d *DB) DeleteUser(ctx context.Context, userID string) error {
-	_, err := d.Pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
-	return err
+	defer d.keyCache.evict(userID)
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM user_key WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (d *DB) PurgeExpiredSessions(ctx context.Context) {

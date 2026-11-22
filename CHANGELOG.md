@@ -6,6 +6,13 @@ All notable changes to AceMate are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Every user now has their own encryption key. It is created with the account, and the database stores it only encrypted by a master key held outside the database (the new `ENCRYPTION_KEYS` setting, required in production). This is the groundwork for encrypting each user's data; no data is encrypted with it yet.
+- Deleting an account deletes the user's key first.
+- Master keys can be rotated: add a new version to `ENCRYPTION_KEYS` and restart. Users' keys are re-encrypted with the newest master key at startup, and existing users without a key get one.
+- In development, without `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key`.
+
 ## [27.0.1] - 2026-11-22
 
 ### Fixed

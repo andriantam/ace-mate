@@ -14,6 +14,7 @@ import (
 
 	"github.com/andriantam/ace-mate/internal/auth"
 	"github.com/andriantam/ace-mate/internal/config"
+	"github.com/andriantam/ace-mate/internal/crypt"
 	"github.com/andriantam/ace-mate/internal/db"
 	"github.com/andriantam/ace-mate/internal/engine"
 	"github.com/andriantam/ace-mate/internal/httpapi"
@@ -46,7 +47,14 @@ func run() error {
 	if cfg.DatabaseURL == "" {
 		slog.Info("no DATABASE_URL: starting an embedded Postgres under " + cfg.DataDir + " (first run downloads it)")
 	}
-	d, err := db.Open(ctx, cfg.DatabaseURL, cfg.DataDir, cfg.Production)
+	keys, err := crypt.LoadKeyring(cfg.EncryptionKeys, cfg.DataDir, cfg.Production)
+	if err != nil {
+		return err
+	}
+	if cfg.EncryptionKeys == "" {
+		slog.Warn("no ENCRYPTION_KEYS: using a development key kept in " + cfg.DataDir + "/encryption.key")
+	}
+	d, err := db.Open(ctx, cfg.DatabaseURL, cfg.DataDir, cfg.Production, keys)
 	if err != nil {
 		return err
 	}

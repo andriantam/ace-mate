@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/andriantam/ace-mate/internal/crypt"
 	"github.com/andriantam/ace-mate/migrations"
 )
 
@@ -26,10 +27,16 @@ type DB struct {
 	Pool       *pgxpool.Pool
 	roleSwitch bool // true when the restricted app_user role is available
 	stop       func()
+	keys       *crypt.Keyring // master keys that wrap each user's data key
+	keyCache   keyCache       // unwrapped user keys, briefly
 }
 
 // Open connects to DATABASE_URL, or in development starts an embedded Postgres under dataDir.
-func Open(ctx context.Context, databaseURL, dataDir string, production bool) (*DB, error) {
+// keys holds the master keys; every user is given a data key wrapped by them.
+func Open(ctx context.Context, databaseURL, dataDir string, production bool, keys *crypt.Keyring) (*DB, error) {
+	if keys == nil {
+		return nil, errors.New("db: encryption keys are required")
+	}
 	stop := func() {}
 	if databaseURL == "" {
 		if production {
@@ -46,7 +53,7 @@ func Open(ctx context.Context, databaseURL, dataDir string, production bool) (*D
 		stop()
 		return nil, err
 	}
-	d := &DB{Pool: pool, stop: stop}
+	d := &DB{Pool: pool, stop: stop, keys: keys}
 	if err := pool.Ping(ctx); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("cannot reach the database: %w", err)
@@ -58,6 +65,10 @@ func Open(ctx context.Context, databaseURL, dataDir string, production bool) (*D
 	if err := d.checkRLS(ctx); err != nil {
 		d.Close()
 		return nil, err
+	}
+	if err := d.prepareUserKeys(ctx); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("preparing user encryption keys: %w", err)
 	}
 	return d, nil
 }
