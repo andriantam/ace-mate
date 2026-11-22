@@ -36,18 +36,30 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 	if t.MaxAttempts <= 0 {
 		t.MaxAttempts = 3
 	}
+	s, err := d.sealerFor(ctx, t.UserID)
+	if err != nil {
+		return "", err
+	}
+	id := newUUID()
+	input, err := s.bytes("task.input", id, t.Input)
+	if err != nil {
+		return "", err
+	}
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	var id string
-	if err := tx.QueryRow(ctx, `INSERT INTO task (user_id,kind,subject,input,max_attempts) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		t.UserID, t.Kind, t.Subject, t.Input, t.MaxAttempts).Scan(&id); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO task (id,user_id,kind,subject,input_enc,max_attempts) VALUES ($1,$2,$3,$4,$5,$6)`,
+		id, t.UserID, t.Kind, t.Subject, input, t.MaxAttempts); err != nil {
 		return "", err
 	}
 	if first != nil {
-		if _, err := tx.Exec(ctx, `INSERT INTO task_event (task_id,data) VALUES ($1,$2)`, id, first); err != nil {
+		ev, err := s.json("task_event.data", id, first)
+		if err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO task_event (task_id,data_enc) VALUES ($1,$2)`, id, ev); err != nil {
 			return "", err
 		}
 	}
@@ -59,6 +71,7 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 // and leases the task until now+lease. It returns nil when there is nothing to do.
 func (d *DB) Claim(ctx context.Context, kinds []string, lease time.Duration) (*Task, error) {
 	var t Task
+	var enc []byte
 	err := d.Pool.QueryRow(ctx, `
 		UPDATE task SET status='running', attempts=attempts+1, lease_until=now()+make_interval(secs => $2), updated_at=now()
 		WHERE id = (
@@ -69,13 +82,24 @@ func (d *DB) Claim(ctx context.Context, kinds []string, lease time.Duration) (*T
 			ORDER BY run_after
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1)
-		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input`,
-		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &t.Input)
+		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input_enc, input`,
+		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &enc, &t.Input)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if enc != nil {
+		// A task whose input can't be decrypted (its owner was deleted meanwhile) is still
+		// returned, with no input, so the worker finishes it instead of retrying forever.
+		s, err := d.sealerFor(ctx, t.UserID)
+		if err == nil {
+			t.Input, err = s.openBytes("task.input", t.ID, enc)
+		}
+		if err != nil {
+			t.Input = nil
+		}
 	}
 	return &t, nil
 }
@@ -88,7 +112,19 @@ func (d *DB) Renew(ctx context.Context, id string, lease time.Duration) error {
 
 // Emit records a progress event for a task.
 func (d *DB) Emit(ctx context.Context, taskID string, ev map[string]any) error {
-	_, err := d.Pool.Exec(ctx, `INSERT INTO task_event (task_id,data) VALUES ($1,$2)`, taskID, ev)
+	var userID string
+	if err := d.Pool.QueryRow(ctx, `SELECT user_id FROM task WHERE id=$1`, taskID).Scan(&userID); err != nil {
+		return err
+	}
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	data, err := s.json("task_event.data", taskID, ev)
+	if err != nil {
+		return err
+	}
+	_, err = d.Pool.Exec(ctx, `INSERT INTO task_event (task_id,data_enc) VALUES ($1,$2)`, taskID, data)
 	return err
 }
 
@@ -98,7 +134,7 @@ func (d *DB) FinishTask(ctx context.Context, id string, failed bool, msg string)
 	if failed {
 		status = "failed"
 	}
-	_, err := d.Pool.Exec(ctx, `UPDATE task SET status=$2, last_error=NULLIF($3,''), input=NULL, lease_until=NULL, updated_at=now() WHERE id=$1`, id, status, msg)
+	_, err := d.Pool.Exec(ctx, `UPDATE task SET status=$2, last_error=NULLIF($3,''), input=NULL, input_enc=NULL, lease_until=NULL, updated_at=now() WHERE id=$1`, id, status, msg)
 	return err
 }
 
@@ -136,16 +172,26 @@ func (d *DB) Progress(ctx context.Context, userID, subject string, after int64) 
 		return out, err
 	}
 	out.Found = true
-	rows, err := d.Pool.Query(ctx, `SELECT id, data FROM task_event WHERE task_id=$1 AND id > $2 ORDER BY id LIMIT 200`, taskID, after)
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return out, err
+	}
+	rows, err := d.Pool.Query(ctx, `SELECT id, data_enc, data FROM task_event WHERE task_id=$1 AND id > $2 ORDER BY id LIMIT 200`, taskID, after)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
+		var enc []byte
 		var data json.RawMessage
-		if err := rows.Scan(&id, &data); err != nil {
+		if err := rows.Scan(&id, &enc, &data); err != nil {
 			return out, err
+		}
+		if enc != nil {
+			if data, err = s.openBytes("task_event.data", taskID, enc); err != nil {
+				return out, err
+			}
 		}
 		out.Events = append(out.Events, data)
 		out.Next = id

@@ -70,6 +70,10 @@ func Open(ctx context.Context, databaseURL, dataDir string, production bool, key
 		d.Close()
 		return nil, fmt.Errorf("preparing user encryption keys: %w", err)
 	}
+	if err := d.encryptExisting(ctx); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("encrypting existing data: %w", err)
+	}
 	return d, nil
 }
 

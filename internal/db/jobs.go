@@ -24,10 +24,14 @@ type JobSummary struct {
 }
 
 func (d *DB) ListJobs(ctx context.Context, userID string) ([]JobSummary, error) {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	var out []JobSummary
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id::text, title, company, COALESCE(url,''), status, created_at, journey
+			SELECT id::text, title, company, status, created_at, url_enc, journey_enc, COALESCE(url,''), journey
 			FROM job WHERE user_id=$1 ORDER BY created_at DESC`, userID)
 		if err != nil {
 			return err
@@ -35,7 +39,12 @@ func (d *DB) ListJobs(ctx context.Context, userID string) ([]JobSummary, error) 
 		idx := map[string]int{}
 		for rows.Next() {
 			var j JobSummary
-			if err := rows.Scan(&j.ID, &j.Title, &j.Company, &j.URL, &j.Status, &j.CreatedAt, &j.Journey); err != nil {
+			var urlEnc, journeyEnc []byte
+			if err := rows.Scan(&j.ID, &j.Title, &j.Company, &j.Status, &j.CreatedAt, &urlEnc, &journeyEnc, &j.URL, &j.Journey); err != nil {
+				rows.Close()
+				return err
+			}
+			if err := openJobURLJourney(s, j.ID, urlEnc, journeyEnc, &j.URL, &j.Journey); err != nil {
 				rows.Close()
 				return err
 			}
@@ -83,17 +92,50 @@ type Job struct {
 }
 
 func (d *DB) GetJob(ctx context.Context, userID, jobID string) (*Job, error) {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	var j Job
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+		var urlEnc, notesEnc, jdEnc, journeyEnc, peopleEnc []byte
+		// The plaintext columns are only read for rows written before encryption, until the
+		// startup pass encrypts them.
 		err := tx.QueryRow(ctx, `
-			SELECT id::text, COALESCE(url,''), notes, COALESCE(jd_text,''), title, company, status, COALESCE(error,''), journey, people, created_at
+			SELECT id::text, title, company, status, COALESCE(error,''), created_at,
+			       url_enc, notes_enc, jd_enc, journey_enc, people_enc,
+			       COALESCE(url,''), COALESCE(notes,''), COALESCE(jd_text,''), journey, people
 			FROM job WHERE id=$1 AND user_id=$2`, jobID, userID).
-			Scan(&j.ID, &j.URL, &j.Notes, &j.JDText, &j.Title, &j.Company, &j.Status, &j.Error, &j.Journey, &j.People, &j.CreatedAt)
+			Scan(&j.ID, &j.Title, &j.Company, &j.Status, &j.Error, &j.CreatedAt,
+				&urlEnc, &notesEnc, &jdEnc, &journeyEnc, &peopleEnc,
+				&j.URL, &j.Notes, &j.JDText, &j.Journey, &j.People)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
+		}
+		if err := openJobURLJourney(s, j.ID, urlEnc, journeyEnc, &j.URL, &j.Journey); err != nil {
+			return err
+		}
+		for _, f := range []struct {
+			col string
+			enc []byte
+			dst *string
+		}{{"job.notes", notesEnc, &j.Notes}, {"job.jd_text", jdEnc, &j.JDText}} {
+			if f.enc != nil {
+				v, err := s.openText(f.col, j.ID, f.enc)
+				if err != nil {
+					return err
+				}
+				*f.dst = v
+			}
+		}
+		if peopleEnc != nil {
+			j.People = model.People{}
+			if _, err := s.openJSON("job.people", j.ID, peopleEnc, &j.People); err != nil {
+				return err
+			}
 		}
 		j.Progress = model.Progress{}
 		rows, err := tx.Query(ctx, `SELECT item, done FROM progress WHERE job_id=$1 AND user_id=$2`, jobID, userID)
@@ -135,26 +177,83 @@ func (d *DB) InsertJob(ctx context.Context, userID string, n NewJob) (string, er
 	if title == "" {
 		title = "Analysing…"
 	}
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			INSERT INTO job (user_id,url,notes,jd_text,title,company,journey,status)
-			VALUES ($1,NULLIF($2,''),$3,NULLIF($4,''),$5,$6,$7,$8) RETURNING id::text`,
-			userID, n.URL, n.Notes, n.JDText, title, n.Company, n.Journey, status).Scan(&id)
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	id = newUUID()
+	var enc [4][]byte
+	for i, f := range []struct{ col, v string }{{"job.url", n.URL}, {"job.notes", n.Notes}, {"job.jd_text", n.JDText}} {
+		if enc[i], err = s.text(f.col, id, f.v); err != nil {
+			return "", err
+		}
+	}
+	if enc[3], err = s.json("job.journey", id, n.Journey); err != nil {
+		return "", err
+	}
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO job (id,user_id,title,company,status,url_enc,notes_enc,jd_enc,journey_enc)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			id, userID, title, n.Company, status, enc[0], enc[1], enc[2], enc[3])
+		return err
 	})
-	return id, err
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// openJobURLJourney fills the job's url and journey from their encrypted columns, where set.
+func openJobURLJourney(s sealer, jobID string, urlEnc, journeyEnc []byte, url *string, journey **model.Journey) error {
+	if urlEnc != nil {
+		v, err := s.openText("job.url", jobID, urlEnc)
+		if err != nil {
+			return err
+		}
+		*url = v
+	}
+	if journeyEnc != nil {
+		var j model.Journey
+		if _, err := s.openJSON("job.journey", jobID, journeyEnc, &j); err != nil {
+			return err
+		}
+		*journey = &j
+	}
+	return nil
 }
 
 func (d *DB) SetJobJD(ctx context.Context, userID, jobID, jd string) error {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	enc, err := s.text("job.jd_text", jobID, jd)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE job SET jd_text=$3, updated_at=now() WHERE id=$1 AND user_id=$2`, jobID, userID, jd)
+		_, err := tx.Exec(ctx, `UPDATE job SET jd_text=NULL, jd_enc=$3, updated_at=now() WHERE id=$1 AND user_id=$2`, jobID, userID, enc)
 		return err
 	})
 }
 
+func (d *DB) sealJourney(ctx context.Context, userID, jobID string, j model.Journey) ([]byte, error) {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.json("job.journey", jobID, j)
+}
+
 func (d *DB) MarkJobReady(ctx context.Context, userID, jobID string, j model.Journey) error {
+	enc, err := d.sealJourney(ctx, userID, jobID, j)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE job SET status='ready', error=NULL, journey=$3, title=$4, company=$5, updated_at=now() WHERE id=$1 AND user_id=$2`,
-			jobID, userID, j, orDefault(j.Meta.Title, "Untitled role"), j.Meta.Company)
+		_, err := tx.Exec(ctx, `UPDATE job SET status='ready', error=NULL, journey=NULL, journey_enc=$3, title=$4, company=$5, updated_at=now() WHERE id=$1 AND user_id=$2`,
+			jobID, userID, enc, orDefault(j.Meta.Title, "Untitled role"), j.Meta.Company)
 		return err
 	})
 }
@@ -162,9 +261,13 @@ func (d *DB) MarkJobReady(ctx context.Context, userID, jobID string, j model.Jou
 // SaveJourneyPartial stores a journey that is still being written, so the user can start
 // on the finished parts. The job stays pending.
 func (d *DB) SaveJourneyPartial(ctx context.Context, userID, jobID string, j model.Journey) error {
+	enc, err := d.sealJourney(ctx, userID, jobID, j)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE job SET journey=$3, title=$4, company=$5, updated_at=now() WHERE id=$1 AND user_id=$2 AND status='pending'`,
-			jobID, userID, j, orDefault(j.Meta.Title, "Untitled role"), j.Meta.Company)
+		_, err := tx.Exec(ctx, `UPDATE job SET journey=NULL, journey_enc=$3, title=$4, company=$5, updated_at=now() WHERE id=$1 AND user_id=$2 AND status='pending'`,
+			jobID, userID, enc, orDefault(j.Meta.Title, "Untitled role"), j.Meta.Company)
 		return err
 	})
 }
@@ -201,8 +304,16 @@ func (d *DB) SetProgress(ctx context.Context, userID, jobID, item string, done b
 }
 
 func (d *DB) SavePeople(ctx context.Context, userID, jobID string, p model.People) error {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	enc, err := s.json("job.people", jobID, p)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE job SET people=$3, updated_at=now() WHERE id=$1 AND user_id=$2`, jobID, userID, p)
+		_, err := tx.Exec(ctx, `UPDATE job SET people='{}', people_enc=$3, updated_at=now() WHERE id=$1 AND user_id=$2`, jobID, userID, enc)
 		return err
 	})
 }
