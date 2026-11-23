@@ -8,13 +8,29 @@ All notable changes to AceMate are listed here. The format follows
 
 ### Added
 
-- Shared prep across job applications. When a journey is written, the AI compares its tasks and HR questions with your other journeys. A task that asks for the same deliverable in the same role track (frontend, backend and so on) is linked, so ticking it in one journey ticks it in all of them. A JavaScript project for a frontend role and one for a backend role stay separate. Company-specific tasks and questions are never shared.
+- Every user now has their own encryption key. It is created with the account, and the database stores it only encrypted by a master key held outside the database (the new `ENCRYPTION_KEYS` setting, required in production).
+- Deleting an account deletes the user's key first.
+- Master keys can be rotated: add a new version to `ENCRYPTION_KEYS` and restart. Users' keys are re-encrypted with the newest master key at startup, and existing users without a key get one.
+- In development, without `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key`.
+- Each user's personal content is now stored encrypted with their own key: the profile, every document's name, link, extracted details and cross-check, each job's link, notes, posting text, journey and person cards, and uploaded files waiting to be read. Each value is tied to its row, so a value copied elsewhere can't be decrypted. The job title and company stay readable, so the jobs list can show and sort them.
+- The personal details your sign-in provider shares (email, name, photo link and birthday) are stored encrypted too.
+- The README has a new Encryption section: how keys work, what is and isn't encrypted, what it protects against, and how to set, back up and rotate `ENCRYPTION_KEYS`. The Privacy Policy now describes encryption at rest and its limits, and the landing page no longer says data is "visible only to you".
+- The Privacy Policy security section now states the facts: the measures used (HTTPS, per-user encryption at rest, row-level security, short retention), what the encryption means in practice (a copied database, a backup or a direct database connection shows encrypted values that need the master key to read), and what it doesn't (it is not end-to-end, the people who hold the master key could technically read the data, and it doesn't apply to what is sent to the AI provider). It lists what stays readable. The policy version is now 3.
+- The sign-up screen no longer says "Only you can see it".
+- Docker Compose needs `ENCRYPTION_KEYS` in `.env`: its container can't keep a generated key, so without one it stops with a message saying what to set.
+- Data saved by an earlier version is encrypted automatically at the first start, and the readable copy is cleared. Nobody has to sign up again.
+- Choose the AI model for each document upload and each job application. Set `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` and a picker appears, with each model's Secure / Not secure label. The pick is stored with the task and the job, so retries use the same model. Migration `0003` adds the columns.
+- The server logs which model reads each document.
+- Shared prep across job applications. When a journey is written, the AI compares its tasks and HR questions with your other journeys, using the model picked for that job. A task that asks for the same deliverable in the same role track (frontend, backend and so on) is linked, so ticking it in one journey ticks it in all of them. A JavaScript project for a frontend role and one for a backend role stay separate. Company-specific tasks and questions are never shared.
 - Interview FAQ on your profile (Profile → Interview FAQ): the generic HR questions your jobs ask ("What is your greatest weakness?", "Tell me about a conflict"), each with your own answer written once, the tip from every job that asks it, and search. A second tab lists the shared tasks by role track. Answers are kept even if you delete the jobs that asked them, and they are included in your data export.
 - In a journey, shared tasks show a "Shared · N other jobs" pill, and HR questions in your FAQ show your answer with a link to edit it.
+- Shared-prep labels and your FAQ answers are encrypted with your own key, like the rest of your content. Migration `0006` adds the tables; it only adds, never rewrites. Journeys saved before this version (encrypted or not) are linked by a background pass at the first start, and ticked tasks carry over to the journeys they are linked to (ticks are only ever merged, never removed). "Find overlaps again" on the FAQ runs the comparison again.
 
-### Changed
+### Fixed
 
-- Upgrading keeps all existing data: the new tables are added alongside the old ones and nothing is rewritten. Journeys written before this version are linked by a background pass on the first start, and ticked tasks carry over to the other journeys they are linked to (ticks are only ever merged, never removed). "Find overlaps again" on the FAQ runs the comparison again.
+- A profile row with no data (from an earlier pre-release database) no longer fails every request that reads the profile; it reads as "no profile". Migration `0002` backfills such rows with an empty profile and enforces `NOT NULL`, without deleting anything.
+- The progress text for uploads and journeys now names the model the user picked, not the site default.
+- A database that ran a pre-release build of shared prep (recorded as `0002_shared_prep.sql`) is brought up to date by `0006`: its rows are kept, and labels and answers it saved in plaintext are encrypted at the first start.
 - The API flow test uses `TEST_DATABASE_URL` when it is set, like the database tests.
 
 ## [27.0.1] - 2026-11-22

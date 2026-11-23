@@ -9,6 +9,15 @@
 -- Additive only: no existing table or row is changed or removed. Existing jobs are linked
 -- by a background pass after start-up (job.shared_synced_at is NULL until then), which
 -- carries their ticked tasks over.
+--
+-- Safe to re-run: a database that already has these tables from a pre-release build of this
+-- feature (recorded as 0002_shared_prep.sql) is brought up to date without losing rows.
+--
+-- Encryption (see 0003_encrypt_columns.sql): the label and the user's answer are personal
+-- content, so they are stored sealed with the owner's data key in label_enc and answer_enc.
+-- The plaintext label and answer columns stay empty; the server encrypts any plaintext left
+-- by the pre-release build at start-up. The key is a generic slug such as
+-- "hr/greatest-weakness" and stays readable, because new journeys are matched against it.
 
 CREATE TABLE IF NOT EXISTS shared_item (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,9 +27,9 @@ CREATE TABLE IF NOT EXISTS shared_item (
   -- backend role stays separate: "frontend/js-project-on-github", "backend/js-project-on-github".
   -- Generic HR questions share one key across all jobs: "hr/greatest-weakness".
   key         text NOT NULL,
-  label       text NOT NULL,
+  label       text NOT NULL DEFAULT '',        -- unused: see label_enc
   done        boolean NOT NULL DEFAULT false, -- tasks: ticked in every linked journey
-  answer      text NOT NULL DEFAULT '',       -- HR questions: the user's own answer
+  answer      text NOT NULL DEFAULT '',        -- unused: see answer_enc
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, kind, key)
@@ -37,6 +46,10 @@ CREATE TABLE IF NOT EXISTS shared_link (
 );
 CREATE INDEX IF NOT EXISTS shared_link_item_idx ON shared_link (item_id);
 CREATE INDEX IF NOT EXISTS shared_link_user_idx ON shared_link (user_id);
+
+ALTER TABLE shared_item ADD COLUMN IF NOT EXISTS label_enc  bytea;
+ALTER TABLE shared_item ADD COLUMN IF NOT EXISTS answer_enc bytea;
+ALTER TABLE shared_item ALTER COLUMN label SET DEFAULT '';
 
 -- When the job's journey was last compared with the user's other jobs. NULL: not yet.
 ALTER TABLE job ADD COLUMN IF NOT EXISTS shared_synced_at timestamptz;

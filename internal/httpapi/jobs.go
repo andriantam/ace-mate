@@ -35,6 +35,7 @@ type newJobReq struct {
 	URL    string `json:"url"`
 	JDText string `json:"jdText"`
 	Notes  string `json:"notes"`
+	Engine string `json:"engine"` // the model the user picked; empty is the site default
 }
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
@@ -61,6 +62,10 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		writeErr(w, http.StatusServiceUnavailable, "Building journeys needs an AI model. See the README to configure one.")
 		return
 	}
+	if _, _, ok := s.pick(toolJourneys, req.Engine); !ok {
+		writeErr(w, http.StatusBadRequest, "That AI model isn't available. Reload the page and choose again.")
+		return
+	}
 	profile, err := s.db.GetProfile(r.Context(), u.ID)
 	if err != nil {
 		serverError(w, err)
@@ -83,7 +88,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		writeErr(w, http.StatusTooManyRequests, "You already have journeys being built. Wait for them to finish.")
 		return
 	}
-	id, err := s.db.InsertJob(r.Context(), u.ID, db.NewJob{URL: req.URL, Notes: req.Notes, JDText: req.JDText})
+	id, err := s.db.InsertJob(r.Context(), u.ID, db.NewJob{URL: req.URL, Notes: req.Notes, JDText: req.JDText, Engine: engineID(req.Engine)})
 	if err != nil {
 		serverError(w, err)
 		return
@@ -165,6 +170,7 @@ type jobView struct {
 	Journey  *model.Journey `json:"journey"`
 	Progress model.Progress `json:"progress"`
 	People   model.People   `json:"people"`
+	Engine   any            `json:"engine"` // the model the user picked for this journey
 	// The tasks and HR questions shared with the user's other jobs, keyed by ref.
 	Shared map[string]db.SharedRef `json:"shared"`
 }
@@ -188,7 +194,11 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People, Shared: shared})
+	v := jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People, Shared: shared}
+	if e, l, ok := s.pick(toolJourneys, j.Engine); ok {
+		v.Engine = engineView(engineIDOrDefault(j.Engine), l, e)
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Server) deleteJob(w http.ResponseWriter, r *http.Request, u *db.User) {

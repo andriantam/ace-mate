@@ -73,7 +73,7 @@ func TestMatchShared(t *testing.T) {
 	t.Run("keeps shared items, drops specific ones and duplicates", func(t *testing.T) {
 		f := &replies{out: []string{good}}
 		e := New(f, 4000, 1, 3)
-		known := []Known{{Kind: "hr", Key: "hr/greatest-weakness", Label: "What is your greatest weakness?", Jobs: []string{"Role A"}}}
+		known := []Known{{Kind: "hr", Key: "hr/greatest-weakness", Label: "What is your greatest weakness?", Jobs: 2}}
 		got, err := e.MatchShared(context.Background(), j.Meta, items, known)
 		if err != nil {
 			t.Fatal(err)
@@ -84,7 +84,7 @@ func TestMatchShared(t *testing.T) {
 		if got[1].Label != "What's your biggest weakness?" {
 			t.Fatalf("an empty label falls back to the wording: %q", got[1].Label)
 		}
-		if !strings.Contains(f.seen[0], "hr/greatest-weakness") || !strings.Contains(f.seen[0], "Role A") {
+		if !strings.Contains(f.seen[0], "hr/greatest-weakness") || !strings.Contains(f.seen[0], `"jobs":2`) {
 			t.Fatal("the prompt should carry the known items")
 		}
 	})

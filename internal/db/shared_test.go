@@ -224,13 +224,17 @@ func TestSharedPrep(t *testing.T) {
 	})
 }
 
-// Upgrading a database from before shared prep keeps every job, journey and tick, and
-// leaves the jobs waiting to be linked.
+// The upgrade as it happens on a real database: journeys stored encrypted (so the plaintext
+// journey column is empty), and shared-prep tables left by a pre-release build of this
+// feature (migration 0002_shared_prep.sql, labels and answers in plaintext). After the
+// upgrade every job, journey and tick is intact, every job is offered for linking, and the
+// pre-release labels and answers are encrypted and still readable.
 func TestUpgradeToSharedPrepKeepsData(t *testing.T) {
 	ctx := context.Background()
 	url := os.Getenv("TEST_DATABASE_URL")
 	dir := t.TempDir()
-	d, err := db.Open(ctx, url, dir, false)
+	keys := testKeys(t)
+	d, err := db.Open(ctx, url, dir, false, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,23 +254,53 @@ func TestUpgradeToSharedPrepKeepsData(t *testing.T) {
 		}
 		jobs = append(jobs, id)
 	}
-	// Turn the database back into one from before this migration, with the data in it.
+	var plain int
+	_ = d.Pool.QueryRow(ctx, `SELECT count(*) FROM job WHERE user_id=$1 AND journey IS NOT NULL`, uid).Scan(&plain)
+	if plain != 0 {
+		t.Fatalf("journeys should be stored encrypted only, %d are in plaintext", plain)
+	}
+	// What the pre-release build left: two jobs linked, plaintext label and answer, and
+	// its migration recorded under its old name.
+	var itemID string
+	err = d.WithUser(ctx, uid, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO shared_item (user_id,kind,key,label,answer) VALUES ($1,'hr','hr/greatest-weakness','What is your greatest weakness?','I over-polish.') RETURNING id::text`, uid).Scan(&itemID); err != nil {
+			return err
+		}
+		for _, job := range jobs[:2] {
+			if _, err := tx.Exec(ctx, `INSERT INTO shared_link (job_id,ref,item_id,user_id) VALUES ($1,'h1:q0',$2,$3)`, job, itemID, uid); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE job SET shared_synced_at=now() WHERE id=$1`, job); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.Pool.Exec(ctx, `
-		DROP TABLE shared_link; DROP TABLE shared_item;
-		ALTER TABLE job DROP COLUMN shared_synced_at;
-		DELETE FROM _migrations WHERE name = '0002_shared_prep.sql'`); err != nil {
+		ALTER TABLE shared_item DROP COLUMN label_enc, DROP COLUMN answer_enc;
+		DELETE FROM _migrations WHERE name IN ('0006_shared_prep.sql', '0006_shared_prep.backfill');
+		INSERT INTO _migrations (name) VALUES ('0002_shared_prep.sql')`); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()
 
-	d, err = db.Open(ctx, url, dir, false) // applies 0002 again
+	d, err = db.Open(ctx, url, dir, false, keys) // the upgrade
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(d.Close)
+
 	list, err := d.ListJobs(ctx, uid)
 	if err != nil || len(list) != 6 {
 		t.Fatalf("jobs after upgrade: %d %v", len(list), err)
+	}
+	for _, s := range list {
+		if s.Journey == nil || len(s.Journey.Nodes) != len(j.Nodes) {
+			t.Fatalf("job %q lost its journey in the list", s.Title)
+		}
 	}
 	for i, id := range jobs {
 		got, err := d.GetJob(ctx, uid, id)
@@ -280,7 +314,57 @@ func TestUpgradeToSharedPrepKeepsData(t *testing.T) {
 			t.Fatalf("job %d progress changed: %v", i, got.Progress)
 		}
 	}
-	if ids, err := d.UnsyncedJobs(ctx, uid); err != nil || len(ids) != 6 {
-		t.Fatalf("all six jobs should wait to be linked: %v %v", ids, err)
+	if ids, err := d.UnsyncedJobs(ctx, uid); err != nil || len(ids) != 4 {
+		t.Fatalf("the four jobs not linked yet should wait to be linked: %v %v", ids, err)
+	}
+	items, err := d.ListShared(ctx, uid)
+	if err != nil || len(items) != 1 || items[0].Label != "What is your greatest weakness?" || items[0].Answer != "I over-polish." || len(items[0].Links) != 2 {
+		t.Fatalf("pre-release item after upgrade: %+v %v", items, err)
+	}
+	var label, answer string
+	var sealed bool
+	_ = d.Pool.QueryRow(ctx, `SELECT label, answer, label_enc IS NOT NULL AND answer_enc IS NOT NULL FROM shared_item WHERE id=$1`, itemID).Scan(&label, &answer, &sealed)
+	if label != "" || answer != "" || !sealed {
+		t.Fatalf("plaintext should be encrypted and cleared: label=%q answer=%q sealed=%v", label, answer, sealed)
+	}
+}
+
+// Labels and answers are never written in plaintext.
+func TestSharedPrepIsEncrypted(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+	uid, err := d.UpsertOAuthUser(ctx, "google", "sub-enc", "e@example.com", "E", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := modeltest.Journey()
+	job, err := d.InsertJob(ctx, uid, db.NewJob{Title: "Role", Journey: &j})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ApplyShareLinks(ctx, uid, job, []db.ShareLink{{Ref: "h1:q0", Kind: db.SharedHR, Key: "hr/secret-question", Label: "A label to hide"}}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := d.ListShared(ctx, uid)
+	if len(items) != 1 || items[0].Label != "A label to hide" {
+		t.Fatalf("items = %+v", items)
+	}
+	if err := d.SetSharedAnswer(ctx, uid, items[0].ID, "An answer to hide"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = d.Pool.QueryRow(ctx, `SELECT count(*) FROM shared_item WHERE position('to hide' in label || answer || encode(coalesce(label_enc,''),'escape') || encode(coalesce(answer_enc,''),'escape')) > 0`).Scan(&n)
+	if n != 0 {
+		t.Fatal("label or answer stored readable")
+	}
+	refs, _ := d.SharedRefs(ctx, uid, job)
+	if refs["h1:q0"].Answer != "An answer to hide" {
+		t.Fatalf("refs = %+v", refs)
+	}
+	if err := d.SetSharedAnswer(ctx, uid, items[0].ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if items, _ := d.ListShared(ctx, uid); len(items) != 1 || items[0].Answer != "" {
+		t.Fatalf("clearing an answer: %+v", items)
 	}
 }

@@ -24,10 +24,10 @@ type ShareItem struct {
 
 // Known is a shared item the user already has.
 type Known struct {
-	Kind  string   `json:"kind"`
-	Key   string   `json:"key"`
-	Label string   `json:"label"`
-	Jobs  []string `json:"jobs"`
+	Kind  string `json:"kind"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Jobs  int    `json:"jobs"` // how many other jobs it appears in (their titles stay private)
 }
 
 // ShareMatch places one item under a shared key. An empty key means the item is specific to

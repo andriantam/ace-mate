@@ -23,7 +23,7 @@ export function Consent() {
         <ul style={{ fontSize: 14, paddingLeft: 18 }}>
           <li>We store your sign-in details, the AI summary of your resume and what you enter. Your resume file is not stored.</li>
           <li>Your resume is read by an AI model run by another company. You&apos;ll see which model, and whether it&apos;s secure, before every upload.</li>
-          <li>Your data is stored on servers hosted by {l.hosting}. Only you can see it, and you can export or delete it at any time.</li>
+          <li>Your personal content is stored encrypted on servers hosted by {l.hosting}, kept apart from other users, and you can export or delete it at any time.</li>
         </ul>
         <form
           onSubmit={async (e) => {

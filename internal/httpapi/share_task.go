@@ -8,6 +8,7 @@ import (
 
 	"github.com/andriantam/ace-mate/internal/db"
 	"github.com/andriantam/ace-mate/internal/engine"
+	"github.com/andriantam/ace-mate/internal/worker"
 )
 
 // taskShare links a finished journey's tasks and HR questions to the same ones in the
@@ -32,12 +33,17 @@ func (s *Server) runShare(ctx context.Context, t *db.Task, _ func(map[string]any
 	}
 	kn := make([]engine.Known, len(known))
 	for i, k := range known {
-		kn[i] = engine.Known{Kind: k.Kind, Key: k.Key, Label: k.Label, Jobs: k.Jobs}
+		kn[i] = engine.Known{Kind: k.Kind, Key: k.Key, Label: k.Label, Jobs: len(k.Jobs)}
 	}
 	items := engine.ShareItems(*job.Journey)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	matches, err := s.journeys.MatchShared(ctx, job.Journey.Meta, items, kn)
+	// The job's data goes only to the model the user picked (and confirmed) for this job.
+	e, _, ok := s.pick(toolJourneys, job.Engine)
+	if !ok {
+		return worker.Permanent(&engine.UserError{Msg: "The model picked for this job is no longer available."})
+	}
+	matches, err := e.MatchShared(ctx, job.Journey.Meta, items, kn)
 	if err != nil {
 		return err
 	}

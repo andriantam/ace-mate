@@ -36,7 +36,7 @@ export const api = {
   deleteDocument: (id: string) => request<{ ok: true }>("DELETE", `/api/documents/${id}`),
   acceptTerms: (version: string, marketing: boolean) => request<{ ok: true }>("POST", "/api/consent", { accept: true, version, marketing }),
   setMarketing: (optIn: boolean) => request<{ ok: true }>("PUT", "/api/consent/marketing", { optIn }),
-  createJob: (b: { url: string; jdText: string; notes: string }) => request<{ id: string }>("POST", "/api/jobs", b),
+  createJob: (b: { url: string; jdText: string; notes: string; engine?: string }) => request<{ id: string }>("POST", "/api/jobs", b),
   getJob: (id: string) => request<Job>("GET", `/api/jobs/${id}`),
   deleteJob: (id: string) => request<{ ok: true }>("DELETE", `/api/jobs/${id}`),
   fillJob: (id: string) => request<{ ok: true }>("POST", `/api/jobs/${id}/fill`),
@@ -71,7 +71,7 @@ export type UploadEvent =
   | { type: "done"; verification: Verification | null }
   | { type: "error"; error: string };
 
-export type DocumentInput = { file?: File; text?: string; url?: string; ackModel: string };
+export type DocumentInput = { file?: File; text?: string; url?: string; ackModel: string; engine?: string };
 
 /**
  * Sends a document and resolves with its id as soon as the server has it; processing then
@@ -80,6 +80,7 @@ export type DocumentInput = { file?: File; text?: string; url?: string; ackModel
 export function addDocument(input: DocumentInput, onUpload: (loaded: number, total: number) => void): Promise<string> {
   const form = new FormData();
   form.append("ackModel", input.ackModel);
+  if (input.engine) form.append("engine", input.engine);
   if (input.file) form.append("resume", input.file);
   else if (input.url) form.append("url", input.url);
   else form.append("text", input.text ?? "");

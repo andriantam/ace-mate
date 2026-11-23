@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,34 @@ const (
 	SharedTask = "task"
 	SharedHR   = "hr"
 )
+
+// The label and answer of a shared item are personal content: they are stored sealed in
+// label_enc and answer_enc (see migrations/0006_shared_prep.sql). Plaintext in label and
+// answer is only read from rows a pre-release build wrote, until encryptSharedItems runs.
+
+const (
+	colSharedLabel  = "shared_item.label"
+	colSharedAnswer = "shared_item.answer"
+)
+
+// openShared returns an item's label and answer, decrypting them where they are sealed.
+func (s sealer) openShared(id, label string, labelEnc []byte, answer string, answerEnc []byte) (string, string, error) {
+	if labelEnc != nil {
+		v, err := s.openText(colSharedLabel, id, labelEnc)
+		if err != nil {
+			return "", "", err
+		}
+		label = v
+	}
+	if answerEnc != nil {
+		v, err := s.openText(colSharedAnswer, id, answerEnc)
+		if err != nil {
+			return "", "", err
+		}
+		answer = v
+	}
+	return label, answer, nil
+}
 
 // ShareLink places one task or HR question of a journey under a shared key.
 type ShareLink struct {
@@ -39,10 +68,14 @@ type CatalogueItem struct {
 // SharedCatalogue lists the user's shared items that still appear in at least one job other
 // than exceptJob (the job being linked, whose old links are about to be replaced).
 func (d *DB) SharedCatalogue(ctx context.Context, userID, exceptJob string) ([]CatalogueItem, error) {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	out := []CatalogueItem{}
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT s.kind, s.key, s.label, array_agg(DISTINCT j.title ORDER BY j.title)
+			SELECT s.id::text, s.kind, s.key, s.label, s.label_enc, array_agg(DISTINCT j.title ORDER BY j.title)
 			FROM shared_item s
 			JOIN shared_link l ON l.item_id = s.id
 			JOIN job j ON j.id = l.job_id
@@ -53,7 +86,12 @@ func (d *DB) SharedCatalogue(ctx context.Context, userID, exceptJob string) ([]C
 		}
 		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (CatalogueItem, error) {
 			var c CatalogueItem
-			err := r.Scan(&c.Kind, &c.Key, &c.Label, &c.Jobs)
+			var id string
+			var labelEnc []byte
+			if err := r.Scan(&id, &c.Kind, &c.Key, &c.Label, &labelEnc, &c.Jobs); err != nil {
+				return c, err
+			}
+			c.Label, _, err = s.openShared(id, c.Label, labelEnc, "", nil)
 			return c, err
 		})
 		return err
@@ -66,6 +104,10 @@ func (d *DB) SharedCatalogue(ctx context.Context, userID, exceptJob string) ([]C
 // everywhere it's linked. It never unticks anything, so no progress is lost. It also
 // records that the job has been linked.
 func (d *DB) ApplyShareLinks(ctx context.Context, userID, jobID string, links []ShareLink) error {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		// One linking at a time per user, so two jobs finishing together agree on new keys.
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(7241002, hashtext($1))`, userID); err != nil {
@@ -83,11 +125,18 @@ func (d *DB) ApplyShareLinks(ctx context.Context, userID, jobID string, links []
 		}
 		touched := map[string]bool{}
 		for _, l := range links {
+			// A new item's id is chosen here so its label can be sealed to it. For a key the
+			// user already has, the existing item (and its label) is kept.
+			newID := newUUID()
+			labelEnc, err := s.text(colSharedLabel, newID, l.Label)
+			if err != nil {
+				return err
+			}
 			var itemID string
-			err := tx.QueryRow(ctx, `
-				INSERT INTO shared_item (user_id, kind, key, label) VALUES ($1,$2,$3,$4)
+			err = tx.QueryRow(ctx, `
+				INSERT INTO shared_item (id, user_id, kind, key, label_enc) VALUES ($1,$2,$3,$4,$5)
 				ON CONFLICT (user_id, kind, key) DO UPDATE SET updated_at = shared_item.updated_at
-				RETURNING id::text`, userID, l.Kind, l.Key, l.Label).Scan(&itemID)
+				RETURNING id::text`, newID, userID, l.Kind, l.Key, labelEnc).Scan(&itemID)
 			if err != nil {
 				return err
 			}
@@ -139,10 +188,14 @@ type SharedRef struct {
 
 // SharedRefs returns the shared items behind a job's tasks and HR questions, keyed by ref.
 func (d *DB) SharedRefs(ctx context.Context, userID, jobID string) (map[string]SharedRef, error) {
+	sl, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]SharedRef{}
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT l.ref, s.id::text, s.kind, s.label, s.answer,
+			SELECT l.ref, s.id::text, s.kind, s.label, s.label_enc, s.answer, s.answer_enc,
 			       COALESCE(json_agg(json_build_object('jobId', o.job_id::text, 'title', j.title, 'ref', o.ref)
 			                ORDER BY j.created_at) FILTER (WHERE o.job_id IS NOT NULL), '[]')
 			FROM shared_link l
@@ -158,7 +211,11 @@ func (d *DB) SharedRefs(ctx context.Context, userID, jobID string) (map[string]S
 		for rows.Next() {
 			var ref string
 			var s SharedRef
-			if err := rows.Scan(&ref, &s.ItemID, &s.Kind, &s.Label, &s.Answer, &s.Others); err != nil {
+			var labelEnc, answerEnc []byte
+			if err := rows.Scan(&ref, &s.ItemID, &s.Kind, &s.Label, &labelEnc, &s.Answer, &answerEnc, &s.Others); err != nil {
+				return err
+			}
+			if s.Label, s.Answer, err = sl.openShared(s.ItemID, s.Label, labelEnc, s.Answer, answerEnc); err != nil {
 				return err
 			}
 			// A job can hold the same item twice; list each other job once.
@@ -264,8 +321,16 @@ func linksOf(ctx context.Context, tx pgx.Tx, itemID string) ([]Ticked, error) {
 
 // SetSharedAnswer saves the user's own answer to a shared HR question.
 func (d *DB) SetSharedAnswer(ctx context.Context, userID, itemID, answer string) error {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	enc, err := s.text(colSharedAnswer, itemID, answer) // an empty answer is stored as NULL
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE shared_item SET answer=$3, updated_at=now() WHERE id=$1 AND user_id=$2 AND kind='hr'`, itemID, userID, answer)
+		tag, err := tx.Exec(ctx, `UPDATE shared_item SET answer='', answer_enc=$3, updated_at=now() WHERE id=$1 AND user_id=$2 AND kind='hr'`, itemID, userID, enc)
 		if err == nil && tag.RowsAffected() == 0 {
 			return ErrNotFound
 		}
@@ -288,10 +353,14 @@ type SharedItem struct {
 // ListShared returns the user's shared items that appear in a job, and HR questions the user
 // answered even if the jobs that asked them have since been deleted.
 func (d *DB) ListShared(ctx context.Context, userID string) ([]SharedItem, error) {
+	sl, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	out := []SharedItem{}
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT s.id::text, s.kind, s.key, s.label, s.done, s.answer, s.updated_at,
+			SELECT s.id::text, s.kind, s.key, s.label, s.label_enc, s.done, s.answer, s.answer_enc, s.updated_at,
 			       COALESCE(json_agg(json_build_object('jobId', l.job_id::text, 'title', j.title, 'ref', l.ref)
 			                ORDER BY j.created_at, l.ref) FILTER (WHERE l.job_id IS NOT NULL), '[]')
 			FROM shared_item s
@@ -299,14 +368,18 @@ func (d *DB) ListShared(ctx context.Context, userID string) ([]SharedItem, error
 			LEFT JOIN job j ON j.id = l.job_id
 			WHERE s.user_id = $1
 			GROUP BY s.id
-			HAVING count(l.job_id) > 0 OR s.answer <> ''
+			HAVING count(l.job_id) > 0 OR s.answer <> '' OR s.answer_enc IS NOT NULL
 			ORDER BY count(l.job_id) DESC, s.key`, userID)
 		if err != nil {
 			return err
 		}
 		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SharedItem, error) {
 			var s SharedItem
-			err := r.Scan(&s.ID, &s.Kind, &s.Key, &s.Label, &s.Done, &s.Answer, &s.UpdatedAt, &s.Links)
+			var labelEnc, answerEnc []byte
+			if err := r.Scan(&s.ID, &s.Kind, &s.Key, &s.Label, &labelEnc, &s.Done, &s.Answer, &answerEnc, &s.UpdatedAt, &s.Links); err != nil {
+				return s, err
+			}
+			s.Label, s.Answer, err = sl.openShared(s.ID, s.Label, labelEnc, s.Answer, answerEnc)
 			return s, err
 		})
 		return err
@@ -320,7 +393,8 @@ func (d *DB) UnsyncedJobs(ctx context.Context, userID string) ([]string, error) 
 	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT id::text FROM job
-			WHERE user_id=$1 AND status='ready' AND journey IS NOT NULL AND shared_synced_at IS NULL
+			WHERE user_id=$1 AND status='ready' AND shared_synced_at IS NULL
+			  AND (journey_enc IS NOT NULL OR journey IS NOT NULL) -- encrypted since 0003, or not yet
 			ORDER BY created_at`, userID)
 		if err != nil {
 			return err
@@ -363,4 +437,71 @@ func (d *DB) OpenTask(ctx context.Context, kind, subject string) (bool, error) {
 	err := d.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM task WHERE kind=$1 AND subject=$2 AND status IN ('queued','running'))`,
 		kind, subject).Scan(&ok)
 	return ok, err
+}
+
+const sharedBackfillName = "0006_shared_prep.backfill"
+
+// encryptSharedItems seals labels and answers that a pre-release build of shared prep
+// stored in plaintext, and clears the plaintext. It runs once (recorded in _migrations);
+// it is safe to interrupt and re-run, and a sealed value is never overwritten. From this
+// version on, labels and answers are only ever written sealed.
+func (d *DB) encryptSharedItems(ctx context.Context) error {
+	var done bool
+	if err := d.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM _migrations WHERE name=$1)`, sharedBackfillName).Scan(&done); err != nil || done {
+		return err
+	}
+	users, err := d.UserIDs(ctx)
+	if err != nil {
+		return err
+	}
+	n := 0
+	for _, uid := range users {
+		s, err := d.sealerFor(ctx, uid)
+		if err != nil {
+			return err
+		}
+		err = d.WithUser(ctx, uid, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `SELECT id::text, label, answer FROM shared_item
+				WHERE user_id=$1 AND ((label <> '' AND label_enc IS NULL) OR (answer <> '' AND answer_enc IS NULL))`, uid)
+			if err != nil {
+				return err
+			}
+			type row struct{ id, label, answer string }
+			list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
+				var x row
+				return x, r.Scan(&x.id, &x.label, &x.answer)
+			})
+			if err != nil {
+				return err
+			}
+			for _, x := range list {
+				le, err := s.text(colSharedLabel, x.id, x.label)
+				if err != nil {
+					return err
+				}
+				ae, err := s.text(colSharedAnswer, x.id, x.answer)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `UPDATE shared_item SET
+					label_enc  = COALESCE(label_enc, $2),  label  = '',
+					answer_enc = COALESCE(answer_enc, $3), answer = ''
+					WHERE id=$1`, x.id, le, ae); err != nil {
+					return err
+				}
+				n++
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if _, err := d.Pool.Exec(ctx, `INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT DO NOTHING`, sharedBackfillName); err != nil {
+		return err
+	}
+	if n > 0 {
+		slog.Info("encryption: encrypted shared prep saved in plaintext", "items", n)
+	}
+	return nil
 }
