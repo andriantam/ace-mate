@@ -26,28 +26,34 @@ describe("Privacy Policy", () => {
     expect(text).toContain("Personal Data Protection Commission");
   });
 
-  it("shows the efforts made to protect data and the benefits of encryption", () => {
+  it("states the security measures and what the encryption means in practice", () => {
     current = session();
     const text = show(<Privacy />).container.textContent ?? "";
-    expect(text).toContain("7. How we protect your data");
-    expect(text).toContain("Encrypted at rest, with a key for each person.");
-    expect(text).toContain("a key made for you alone");
-    expect(text).toContain("A copied database is unreadable.");
-    expect(text).toContain("Opening the database shows scrambled values.");
-    expect(text).toContain("Reading it takes the master key as well");
-    expect(text).toContain("Deleting your account destroys your key.");
+    expect(text).toContain("7. Security");
+    expect(text).toContain("encrypted in our database (AES-256) with a key made for you alone");
+    expect(text).toContain("kept in the server's configuration, not in the database");
+    expect(text).toContain("sees encrypted values for the content listed above. Reading them takes the master key.");
+    expect(text).toContain("Deleting your account deletes your key from our live database.");
     expect(text).toContain("we never sell your data");
   });
 
-  it("is honest about what encryption does not do", () => {
+  it("states what the encryption does not do and what stays readable", () => {
     current = session();
     const text = show(<Privacy />).container.textContent ?? "";
     expect(text).toContain("This is not end-to-end encryption.");
-    expect(text).toContain("could technically read it");
-    expect(text).toContain("job titles and company names");
+    expect(text).toContain("the people who run AceMate and hold the master key could technically read it");
+    expect(text).toContain("does not apply to what is sent to the AI provider");
+    expect(text).toContain("Job titles and company names");
     expect(text).toContain("and the keys that go with them");
-    // No claim that the operator is locked out, which the design does not deliver.
-    expect(text).not.toMatch(/only you can|nobody can read|no one can read|cannot be read by us|not even (we|us)|even we (cannot|can't)|we cannot (see|read)/i);
+  });
+
+  it("makes no claim the design does not deliver", () => {
+    current = session();
+    const all = show(<Privacy />).container.textContent ?? "";
+    const text = all.slice(all.indexOf("7. Security"), all.indexOf("8. How long we keep it"));
+    expect(text.length).toBeGreaterThan(500);
+    expect(text).not.toMatch(/only you can|nobody can|no one can|cannot be read by us|not even (we|us)|even we (cannot|can't)|we cannot (see|read)|unreadable|can't show|mistake in our code/i);
+    expect(text).not.toMatch(/\b(impossible|guarantee[sd]?|unbreakable|military)\b/i);
   });
 
   it("sends people to the Your data page, not a dashboard", () => {
