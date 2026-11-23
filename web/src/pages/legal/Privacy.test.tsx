@@ -26,16 +26,28 @@ describe("Privacy Policy", () => {
     expect(text).toContain("Personal Data Protection Commission");
   });
 
-  it("explains encryption at rest and is honest about its limits", () => {
+  it("shows the efforts made to protect data and the benefits of encryption", () => {
     current = session();
     const text = show(<Privacy />).container.textContent ?? "";
-    expect(text).toContain("Encryption at rest.");
+    expect(text).toContain("7. How we protect your data");
+    expect(text).toContain("Encrypted at rest, with a key for each person.");
     expect(text).toContain("a key made for you alone");
-    expect(text).toContain("job titles and company names");
+    expect(text).toContain("A copied database is unreadable.");
+    expect(text).toContain("Opening the database shows scrambled values.");
+    expect(text).toContain("Reading it takes the master key as well");
+    expect(text).toContain("Deleting your account destroys your key.");
+    expect(text).toContain("we never sell your data");
+  });
+
+  it("is honest about what encryption does not do", () => {
+    current = session();
+    const text = show(<Privacy />).container.textContent ?? "";
     expect(text).toContain("This is not end-to-end encryption.");
-    expect(text).toContain("Deleting your account deletes your key.");
+    expect(text).toContain("could technically read it");
+    expect(text).toContain("job titles and company names");
     expect(text).toContain("and the keys that go with them");
-    expect(text).not.toMatch(/only you can|nobody can read|cannot be read by us/i);
+    // No claim that the operator is locked out, which the design does not deliver.
+    expect(text).not.toMatch(/only you can|nobody can read|no one can read|cannot be read by us|not even (we|us)|even we (cannot|can't)|we cannot (see|read)/i);
   });
 
   it("sends people to the Your data page, not a dashboard", () => {

@@ -122,26 +122,65 @@ export function Privacy() {
         comparable standard.
       </p>
 
-      <h2>7. Security</h2>
+      <h2>7. How we protect your data</h2>
+      <p>We built AceMate to keep as little as possible and to protect what it does keep. In short:</p>
+      <ul>
+        <li>
+          <b>Encrypted in transit.</b> Everything between your browser and our servers uses HTTPS.
+        </li>
+        <li>
+          <b>Encrypted at rest, with a key for each person.</b> Your personal content is stored scrambled, as explained below.
+        </li>
+        <li>
+          <b>Kept apart from other users.</b> The database itself only lets each account reach its own records, so a mistake in our code can&apos;t show one
+          person&apos;s data to another.
+        </li>
+        <li>
+          <b>Little kept, and not for long.</b> An uploaded file is deleted once it has been read, and progress messages an hour after a task finishes. We never
+          keep your password or your sign-in provider&apos;s tokens, and session tokens are stored only in hashed form.
+        </li>
+        <li>
+          <b>No selling, no advertising.</b> We use no advertising or analytics cookies, and we never sell your data.
+        </li>
+        <li>
+          <b>You stay in control.</b> You see which AI model will read something before you send it, and you can export or delete everything yourself.
+        </li>
+      </ul>
       <p>
-        Data is encrypted in transit (HTTPS). The database keeps each person&apos;s data separate, so one user can&apos;t read another&apos;s. Session tokens are
-        stored only in hashed form, and we keep as little as we can.
+        <b>How the encryption works.</b> The personal content we store is encrypted in our database with a key made for you alone: your sign-in details (email,
+        name, picture link{l.birthday ? ", birthday" : ""}), your profile, the names, links and summaries of your documents, your job applications (links,
+        descriptions, notes, journeys and notes about people), and any file waiting to be read. Your key is itself locked with a master key that we keep in a
+        separate place from the database.
       </p>
       <p>
-        <b>Encryption at rest.</b> The personal content we store is encrypted in our database with a key made for you alone: your sign-in details (email, name,
-        picture link{l.birthday ? ", birthday" : ""}), your profile, the names, links and summaries of your documents, your job applications (links, descriptions,
-        notes, journeys and notes about people), and any file waiting to be read. Your key is itself encrypted with a master key that we keep separate from the
-        database, so a copy of the database or of a backup can&apos;t be read without it. Deleting your account deletes your key.
+        <b>What this does for you.</b>
+      </p>
+      <ul>
+        <li>
+          <b>A copied database is unreadable.</b> If our database or a backup were stolen or leaked, your personal content would appear as scrambled data and
+          could not be read without the master key.
+        </li>
+        <li>
+          <b>Opening the database shows scrambled values.</b> Anyone who connects to our database directly, including our own team and our hosting provider, sees
+          scrambled values in place of your personal content. Reading it takes the master key as well, which is kept apart from the database.
+        </li>
+        <li>
+          <b>Your data is locked separately from everyone else&apos;s.</b> Each person has their own key, and each value is tied to the record it belongs to, so a
+          value copied to another account or record can&apos;t be opened there.
+        </li>
+        <li>
+          <b>Deleting your account destroys your key.</b> Deleting your account deletes your key.
+        </li>
+      </ul>
+      <p>
+        <b>What it doesn&apos;t do.</b> This is not end-to-end encryption. Our servers unlock your data to work for you, for example to show it to you or to send
+        it to the AI model (section 4), so the people who run AceMate and hold the master key could technically read it. The protection is against theft,
+        leaks and direct access to the database, not a promise that no one at AceMate could ever read your data. Some information stays readable because the site
+        needs it to work or it holds no personal content: job titles and company names, the type and status of items, dates, your language setting, your
+        consent choices, short progress messages of background tasks, and server logs.
       </p>
       <p>
-        <b>What is not encrypted.</b> Information the site needs to work or that holds no personal content stays readable: job titles and company names, the type
-        and status of items, dates, your language setting, your consent choices, short progress messages of background tasks (deleted an hour after they finish),
-        and server logs.
-      </p>
-      <p>
-        <b>The limits of this.</b> This is not end-to-end encryption. Our servers decrypt your data to work for you, for example to show it to you or to send it to
-        the AI model (section 4), so people with access to our running systems and our master key could read it. No system is perfectly secure. If a breach is
-        likely to cause you significant harm, we will tell you and the regulator as the law requires.
+        No system is perfectly secure. If a breach is likely to cause you significant harm, we will tell you and the regulator as the law requires.
       </p>
 
       <h2>8. How long we keep it</h2>
