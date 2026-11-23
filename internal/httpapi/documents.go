@@ -60,7 +60,12 @@ func (s *Server) addDocument(w http.ResponseWriter, r *http.Request, u *db.User)
 	}
 	// The user must have seen and ticked the AI model that will read the document. Checking
 	// the model id means a page left open before the operator switched models can't send silently.
-	if r.FormValue("ackModel") != s.cfg.DocsLLM.Model {
+	_, llm, ok := s.pick(toolDocs, r.FormValue("engine"))
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "That AI model isn't available. Reload the page and choose again.")
+		return
+	}
+	if r.FormValue("ackModel") != llm.Model {
 		writeErr(w, http.StatusBadRequest, "Please confirm which AI model will read your document, then try again.")
 		return
 	}
@@ -86,7 +91,7 @@ func (s *Server) addDocument(w http.ResponseWriter, r *http.Request, u *db.User)
 		return
 	}
 	// The file waits in the queue (in the database) only until it has been read.
-	if _, err := s.db.Enqueue(r.Context(), db.NewTask{UserID: u.ID, Kind: taskDocument, Subject: id, Input: di.input()},
+	if _, err := s.db.Enqueue(r.Context(), db.NewTask{UserID: u.ID, Kind: taskDocument, Subject: id, Input: di.input(), Engine: engineID(r.FormValue("engine"))},
 		map[string]any{"type": "progress", "step": "received", "kind": di.in.Kind}); err != nil {
 		serverError(w, err)
 		return

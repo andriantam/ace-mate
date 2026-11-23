@@ -85,6 +85,7 @@ type Job struct {
 	Company   string
 	Status    string
 	Error     string
+	Engine    string // the model the user picked for this journey; "" is the site default
 	Journey   *model.Journey
 	People    model.People
 	Progress  model.Progress
@@ -102,11 +103,11 @@ func (d *DB) GetJob(ctx context.Context, userID, jobID string) (*Job, error) {
 		// The plaintext columns are only read for rows written before encryption, until the
 		// startup pass encrypts them.
 		err := tx.QueryRow(ctx, `
-			SELECT id::text, title, company, status, COALESCE(error,''), created_at,
+			SELECT id::text, title, company, status, COALESCE(error,''), engine, created_at,
 			       url_enc, notes_enc, jd_enc, journey_enc, people_enc,
 			       COALESCE(url,''), COALESCE(notes,''), COALESCE(jd_text,''), journey, people
 			FROM job WHERE id=$1 AND user_id=$2`, jobID, userID).
-			Scan(&j.ID, &j.Title, &j.Company, &j.Status, &j.Error, &j.CreatedAt,
+			Scan(&j.ID, &j.Title, &j.Company, &j.Status, &j.Error, &j.Engine, &j.CreatedAt,
 				&urlEnc, &notesEnc, &jdEnc, &journeyEnc, &peopleEnc,
 				&j.URL, &j.Notes, &j.JDText, &j.Journey, &j.People)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -163,8 +164,8 @@ func (d *DB) GetJob(ctx context.Context, userID, jobID string) (*Job, error) {
 }
 
 type NewJob struct {
-	URL, Notes, JDText, Title, Company string
-	Journey                            *model.Journey
+	URL, Notes, JDText, Title, Company, Engine string
+	Journey                                    *model.Journey
 }
 
 func (d *DB) InsertJob(ctx context.Context, userID string, n NewJob) (string, error) {
@@ -193,9 +194,9 @@ func (d *DB) InsertJob(ctx context.Context, userID string, n NewJob) (string, er
 	}
 	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO job (id,user_id,title,company,status,url_enc,notes_enc,jd_enc,journey_enc)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-			id, userID, title, n.Company, status, enc[0], enc[1], enc[2], enc[3])
+			INSERT INTO job (id,user_id,title,company,status,url_enc,notes_enc,jd_enc,journey_enc,engine)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+			id, userID, title, n.Company, status, enc[0], enc[1], enc[2], enc[3], n.Engine)
 		return err
 	})
 	if err != nil {

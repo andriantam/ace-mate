@@ -16,6 +16,21 @@ function ModelName({ e }: { e: Engine }) {
 }
 
 function Models({ m }: { m: { documents: Engine; journeys: Engine } }) {
+  const options = m.documents.options ?? m.journeys.options ?? [];
+  if (options.length > 1) {
+    return (
+      <>
+        On this site you choose the model for each document and each job application, from:{" "}
+        {options.map((o, i) => (
+          <span key={o.id}>
+            {i ? "; " : ""}
+            <ModelName e={o} />
+          </span>
+        ))}
+        .
+      </>
+    );
+  }
   if (!m.documents.enabled && !m.journeys.enabled) return <>No AI model is configured on this site at the moment, so nothing is sent to one.</>;
   if (sameModel(m.documents, m.journeys)) {
     return (

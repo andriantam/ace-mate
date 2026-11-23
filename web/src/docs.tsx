@@ -7,7 +7,10 @@ import type { DocumentRow } from "./types";
 // Keeps documents and their processing progress for the whole app, so closing the upload
 // window (or changing page) never stops or forgets a document being processed.
 
-export type Pending = { key: string; name: string; kind: DocumentRow["kind"]; run: Run; id?: string };
+// model is the name of the AI model the user picked for this upload, shown in its progress text.
+export type Pending = { key: string; name: string; kind: DocumentRow["kind"]; run: Run; id?: string; model?: string };
+
+const GENERIC_MODEL = "The AI model";
 
 type Ctx = {
   docs: DocumentRow[];
@@ -16,7 +19,7 @@ type Ctx = {
   version: number; // bumps whenever the profile may have changed
   open: boolean;
   setOpen: (v: boolean) => void;
-  add: (input: DocumentInput & { name: string; kind: DocumentRow["kind"] }) => void;
+  add: (input: DocumentInput & { name: string; kind: DocumentRow["kind"]; modelName?: string }) => void;
   remove: (id: string) => Promise<void>;
   dismiss: (key: string) => void;
   refresh: () => Promise<void>;
@@ -32,7 +35,6 @@ export const useDocs = () => {
 export function DocsProvider({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const active = Boolean(session?.user?.termsAccepted);
-  const model = session?.models.documents.displayName || session?.models.documents.model || "The AI model";
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [version, setVersion] = useState(0);
@@ -78,7 +80,7 @@ export function DocsProvider({ children }: { children: ReactNode }) {
           let finished = false;
           update(p.key, (cur) => {
             let run = cur.run;
-            for (const ev of res.events) run = advance(run, ev, model);
+            for (const ev of res.events) run = advance(run, ev, cur.model ?? GENERIC_MODEL);
             finished = run.done;
             return { ...cur, run: { ...run, next: res.next } };
           });
@@ -94,11 +96,12 @@ export function DocsProvider({ children }: { children: ReactNode }) {
       }
     }, 900);
     return () => window.clearInterval(id);
-  }, [active, model, refresh]);
+  }, [active, refresh]);
 
   const add: Ctx["add"] = (input) => {
     const key = `up-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const p: Pending = { key, name: input.name, kind: input.kind, run: freshRun(input.kind === "link") };
+    const model = input.modelName ?? GENERIC_MODEL;
+    const p: Pending = { key, name: input.name, kind: input.kind, model, run: freshRun(input.kind === "link") };
     setPending((cur) => [...cur, p]);
     addDocument(input, (loaded, total) => update(key, (cur) => ({ ...cur, run: advance(cur.run, { type: "upload", loaded, total }, model) })))
       .then((id) => {

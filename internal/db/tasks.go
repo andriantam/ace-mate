@@ -22,12 +22,14 @@ type Task struct {
 	Attempts    int    // including the current one
 	MaxAttempts int
 	Input       []byte
+	Engine      string // the model the user picked; "" is the site default
 }
 
 // NewTask describes work to enqueue.
 type NewTask struct {
 	UserID, Kind, Subject string
 	Input                 []byte
+	Engine                string
 	MaxAttempts           int // 0 means 3
 }
 
@@ -50,8 +52,8 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `INSERT INTO task (id,user_id,kind,subject,input_enc,max_attempts) VALUES ($1,$2,$3,$4,$5,$6)`,
-		id, t.UserID, t.Kind, t.Subject, input, t.MaxAttempts); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO task (id,user_id,kind,subject,input_enc,max_attempts,engine) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		id, t.UserID, t.Kind, t.Subject, input, t.MaxAttempts, t.Engine); err != nil {
 		return "", err
 	}
 	if first != nil {
@@ -78,8 +80,8 @@ func (d *DB) Claim(ctx context.Context, kinds []string, lease time.Duration) (*T
 			ORDER BY run_after
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1)
-		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input_enc, input`,
-		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &enc, &t.Input)
+		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input_enc, input, engine`,
+		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &enc, &t.Input, &t.Engine)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

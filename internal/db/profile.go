@@ -34,7 +34,10 @@ func (d *DB) GetProfile(ctx context.Context, userID string) (*ProfileRow, error)
 		}
 		if ok, err := s.openJSON("profile.data", userID, enc, &r.Data); err != nil {
 			return err
-		} else if !ok && plain != nil {
+		} else if !ok {
+			if plain == nil { // a legacy row with no data reads as "no profile"
+				return nil
+			}
 			r.Data = *plain
 		}
 		out = &r

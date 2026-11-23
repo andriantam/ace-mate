@@ -134,6 +134,8 @@ LLM_VISION=true                 # only if the model reads images
 | Groq | `https://api.groq.com/openai/v1` | `json_schema` |
 | vLLM, LM Studio, llama.cpp | their `/v1` URL | start with `json_schema` |
 
+**Let users choose the model (optional).** Set `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` (add `ANTHROPIC_MODEL` to pick the Claude model). Uploading a document and adding a job application then show a picker with each model's Secure / Not secure label, and the choice is remembered for retries. With one key, nothing changes. `OPENROUTER_VISION`, `OPENROUTER_NATIVE_PDF`, `OPENROUTER_STRUCTURED`, `OPENROUTER_MAX_TOKENS` and `OPENROUTER_PRIVACY` tune the OpenRouter model.
+
 **A different model per tool (optional).** Add a prefix to any `LLM_*` setting to override it for one tool. Anything you don't set is inherited from the default, and a different provider or host never receives the default's API key.
 
 | Tool | Prefix | Example |
