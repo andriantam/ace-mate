@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -89,65 +90,106 @@ func ShareItems(j model.Journey) []ShareItem {
 // items. It returns one match per item that is shared (items with an empty key are left
 // out), with keys checked: tasks never get an "hr/" key and HR questions always do.
 func (e *Engine) MatchShared(ctx context.Context, meta model.JobMeta, items []ShareItem, known []Known) ([]ShareMatch, error) {
-	if len(items) == 0 {
-		return nil, nil
+	// HR questions and tasks are matched in separate, smaller calls, each with only the known
+	// items of its kind: a long reply is more likely to go wrong, and a failure in one group
+	// doesn't lose the other.
+	var out []ShareMatch
+	var failed error
+	groups := 0
+	for _, kind := range []string{"hr", "task"} {
+		var its []ShareItem
+		for _, it := range items {
+			if it.Kind == kind {
+				its = append(its, it)
+			}
+		}
+		if len(its) == 0 {
+			continue
+		}
+		var kn []Known
+		for _, k := range known {
+			if k.Kind == kind {
+				kn = append(kn, k)
+			}
+		}
+		groups++
+		ms, err := e.matchGroup(ctx, meta, kind, its, kn)
+		if err != nil {
+			slog.Warn("share: matching failed for one group", "kind", kind, "items", len(its), "err", err)
+			failed = err
+			continue
+		}
+		out = append(out, ms...)
 	}
+	if failed != nil && len(out) == 0 && groups > 0 {
+		return nil, failed
+	}
+	return out, nil
+}
+
+// normalizeKey repairs small slips in a key ("Frontend/JS_Project " -> "frontend/js-project").
+func normalizeKey(k string) string {
+	k = strings.ToLower(strings.TrimSpace(k))
+	k = strings.NewReplacer(" ", "-", "_", "-", "--", "-").Replace(k)
+	return strings.Trim(k, "-")
+}
+
+func (e *Engine) matchGroup(ctx context.Context, meta model.JobMeta, kind string, items []ShareItem, known []Known) ([]ShareMatch, error) {
 	byRef := map[string]ShareItem{}
 	for _, it := range items {
 		byRef[it.Ref] = it
 	}
+	if known == nil {
+		known = []Known{}
+	}
 	knownJSON, _ := jsonMarshal(known)
 	itemsJSON, _ := jsonMarshal(items)
 	jobJSON, _ := jsonMarshal(map[string]any{"title": meta.Title, "summary": meta.Summary, "mustHave": meta.MustHave})
-	prompt := "<new_job>\n" + jobJSON + "\n</new_job>\n\n<known_items>\n" + knownJSON + "\n</known_items>\n\n<common_hr_keys>\n" +
-		strings.Join(CommonHRKeys, "\n") + "\n</common_hr_keys>\n\n<new_items>\n" + itemsJSON + "\n</new_items>\n\n" +
-		"Return the job's track and one match per new item."
+	prompt := "<new_job>\n" + jobJSON + "\n</new_job>\n\n<known_items>\n" + knownJSON + "\n</known_items>\n\n"
+	if kind == "hr" {
+		prompt += "<common_hr_keys>\n" + strings.Join(CommonHRKeys, "\n") + "\n</common_hr_keys>\n\n"
+	}
+	prompt += "<new_items>\n" + itemsJSON + "\n</new_items>\n\nReturn the job's track and one match per new item."
 
+	// The reply is checked leniently: an entry that is unusable (unknown ref, bad key, a
+	// duplicate) is dropped and that item simply stays unshared. Only a reply with nothing
+	// usable is sent back to the model.
 	resp, err := structured(ctx, e, call{system: shareSystem, parts: []llm.Part{{Text: prompt}}, effort: llm.EffortLow},
 		func(r *shareResp) error {
-			seen := map[string]bool{}
 			for _, m := range r.Matches {
-				it, ok := byRef[m.Ref]
-				if !ok {
-					return fmt.Errorf("unknown ref %q", m.Ref)
-				}
-				if seen[m.Ref] {
-					return fmt.Errorf("ref %q appears twice", m.Ref)
-				}
-				seen[m.Ref] = true
-				if m.Key == "" {
-					continue
-				}
-				if !shareKeyRe.MatchString(m.Key) || len(m.Key) > 80 {
-					return fmt.Errorf("key %q must be lowercase words joined by hyphens, as <track>/<slug>", m.Key)
-				}
-				if isHR := strings.HasPrefix(m.Key, "hr/"); isHR != (it.Kind == "hr") {
-					return fmt.Errorf("ref %q: HR questions, and only they, use keys starting with hr/", m.Ref)
+				if _, ok := byRef[m.Ref]; ok {
+					return nil
 				}
 			}
-			if len(seen) < len(items)*9/10 {
-				return fmt.Errorf("only %d of %d items have a match", len(seen), len(items))
-			}
-			return nil
+			return fmt.Errorf("matches must use the refs given in new_items, such as %q", items[0].Ref)
 		})
 	if err != nil {
 		return nil, err
 	}
 
 	var out []ShareMatch
-	used := map[string]bool{} // a key appears once per journey, except HR questions asked twice
+	seen := map[string]bool{}
+	used := map[string]bool{} // a task key appears once per journey; an HR question may be asked twice
 	for _, m := range resp.Matches {
-		if m.Key == "" {
+		it, ok := byRef[m.Ref]
+		if !ok || seen[m.Ref] {
 			continue
 		}
-		kindKey := byRef[m.Ref].Kind + " " + m.Key
-		if used[kindKey] && byRef[m.Ref].Kind == "task" {
+		seen[m.Ref] = true
+		m.Key = normalizeKey(m.Key)
+		if m.Key == "" || !shareKeyRe.MatchString(m.Key) || len(m.Key) > 80 {
 			continue
 		}
-		used[kindKey] = true
+		if strings.HasPrefix(m.Key, "hr/") != (it.Kind == "hr") {
+			continue
+		}
+		if used[m.Key] && it.Kind == "task" {
+			continue
+		}
+		used[m.Key] = true
 		m.Label = strings.TrimSpace(m.Label)
 		if m.Label == "" {
-			m.Label = byRef[m.Ref].Text
+			m.Label = it.Text
 		}
 		if r := []rune(m.Label); len(r) > 200 {
 			m.Label = string(r[:200])

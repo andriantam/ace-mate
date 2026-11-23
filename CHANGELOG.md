@@ -32,6 +32,7 @@ All notable changes to AceMate are listed here. The format follows
 - The progress text for uploads and journeys now names the model the user picked, not the site default.
 - A database that ran a pre-release build of shared prep (recorded as `0002_shared_prep.sql`) is brought up to date by `0006`: its rows are kept, and labels and answers it saved in plaintext are encrypted at the first start.
 - The API flow test uses `TEST_DATABASE_URL` when it is set, like the database tests.
+- Linking a journey to your other jobs no longer fails as a whole when the model gets one entry wrong: unusable entries are skipped (that item just stays unshared), small slips in a key are repaired, and HR questions and tasks are matched in two smaller calls so one failing keeps the other. When a model reply is rejected, the server log now says why.
 
 ## [27.0.1] - 2026-11-22
 

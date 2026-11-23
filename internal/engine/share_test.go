@@ -78,34 +78,65 @@ func TestMatchShared(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 2 || got[0].Ref != "t1:0" || got[1].Ref != "h1:q0" {
+		if len(got) != 2 || got[0].Ref != "h1:q0" || got[1].Ref != "t1:0" {
 			t.Fatalf("got %+v", got)
 		}
-		if got[1].Label != "What's your biggest weakness?" {
-			t.Fatalf("an empty label falls back to the wording: %q", got[1].Label)
+		if got[0].Label != "What's your biggest weakness?" {
+			t.Fatalf("an empty label falls back to the wording: %q", got[0].Label)
 		}
-		if !strings.Contains(f.seen[0], "hr/greatest-weakness") || !strings.Contains(f.seen[0], `"jobs":2`) {
-			t.Fatal("the prompt should carry the known items")
+		// The HR call carries the known HR items and the common keys; the task call neither.
+		if !strings.Contains(f.seen[0], "hr/greatest-weakness") || !strings.Contains(f.seen[0], `"jobs":2`) || !strings.Contains(f.seen[0], "<common_hr_keys>") {
+			t.Fatal("the HR prompt should carry the known HR items")
+		}
+		if strings.Contains(f.seen[1], "hr/greatest-weakness") || strings.Contains(f.seen[1], "<common_hr_keys>") {
+			t.Fatal("the task prompt should not carry HR items")
 		}
 	})
 
-	t.Run("rejects an HR key on a task and asks again", func(t *testing.T) {
-		bad := strings.Replace(good, `"key":"frontend/js-project-on-github","label":"Push`, `"key":"hr/js","label":"Push`, 1)
-		f := &replies{out: []string{bad, good}}
+	t.Run("drops unusable entries instead of failing the whole reply", func(t *testing.T) {
+		bad := strings.Replace(good, `"key":"frontend/js-project-on-github","label":"Push`, `"key":"hr/js","label":"Push`, 1) // HR key on a task
+		bad = strings.Replace(bad, `{"ref":"t1:2"`, `{"ref":"zz:9","key":"general/x","label":"x"},{"ref":"t1:2"`, 1)          // unknown ref
+		bad = strings.Replace(bad, `"hr/greatest-weakness"`, `"HR/Greatest Weakness "`, 1)                                    // repairable slip
+		f := &replies{out: []string{bad}}
 		got, err := New(f, 4000, 1, 3).MatchShared(context.Background(), j.Meta, items, nil)
-		if err != nil || len(got) != 2 || len(f.seen) != 2 {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(f.seen) != 2 {
+			t.Fatalf("one call for HR questions and one for tasks, got %d", len(f.seen))
+		}
+		// t1:0 is dropped (HR key on a task); t1:1 keeps the task key; h1:q0's key is repaired.
+		var refs []string
+		for _, m := range got {
+			refs = append(refs, m.Ref+"="+m.Key)
+		}
+		if strings.Join(refs, ",") != "h1:q0=hr/greatest-weakness,t1:1=frontend/js-project-on-github" {
+			t.Fatalf("got %v", refs)
+		}
+	})
+
+	t.Run("asks again only when nothing in the reply is usable", func(t *testing.T) {
+		junk := `{"track":"x","matches":[{"ref":"nope","key":"","label":""}]}`
+		f := &replies{out: []string{junk, good, good}}
+		got, err := New(f, 4000, 1, 3).MatchShared(context.Background(), j.Meta, items, nil)
+		if err != nil || len(got) != 2 || len(f.seen) != 3 {
 			t.Fatalf("got %+v %v after %d calls", got, err, len(f.seen))
 		}
-		if !strings.Contains(f.seen[1], "only they, use keys starting with hr/") {
+		if !strings.Contains(f.seen[1], "must use the refs given") {
 			t.Fatalf("the retry should explain the problem: %s", f.seen[1])
 		}
 	})
 
-	t.Run("rejects keys that aren't slugs", func(t *testing.T) {
-		bad := strings.Replace(good, "frontend/js-project-on-github", "Frontend JS project", 1)
-		f := &replies{out: []string{bad, bad, bad}}
+	t.Run("one group failing keeps the other", func(t *testing.T) {
+		junk := `{"track":"x","matches":[]}`
+		f := &replies{out: []string{good, junk, junk, junk}} // HR succeeds, tasks never do
+		got, err := New(f, 4000, 1, 3).MatchShared(context.Background(), j.Meta, items, nil)
+		if err != nil || len(got) != 1 || got[0].Ref != "h1:q0" {
+			t.Fatalf("got %+v %v", got, err)
+		}
+		f = &replies{out: []string{junk}}
 		if _, err := New(f, 4000, 1, 3).MatchShared(context.Background(), j.Meta, items, nil); err == nil {
-			t.Fatal("expected an error")
+			t.Fatal("when every group fails, the error is returned")
 		}
 	})
 
