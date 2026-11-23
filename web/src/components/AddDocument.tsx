@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useDocs, type Pending } from "../docs";
 import { STAGES, type Run } from "../progress";
 import { useSession } from "../session";
-import type { DocumentRow, Engine, Verification } from "../types";
+import { resolveEngine, type DocumentRow, type Engine, type Verification } from "../types";
+import { ModelPicker } from "./ModelPicker";
 
 export function PrivacyPill({ privacy }: { privacy?: Engine["privacy"] }) {
   const secure = privacy === "secure";
@@ -97,6 +98,7 @@ export function AddDocumentModal() {
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
   const [ack, setAck] = useState(false);
+  const [choice, setChoice] = useState(""); // the model the user picked; "" is the pre-selected one
   const [confirmDel, setConfirmDel] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -108,7 +110,7 @@ export function AddDocumentModal() {
   }, [open, setOpen]);
 
   if (!open || !session) return null;
-  const engine = session.models.documents;
+  const engine = resolveEngine(session.models.documents, choice);
   const model = engine.displayName || engine.model || "The AI model";
   const validUrl = /^https:\/\/[^\s/]+\.[^\s]+/.test(url.trim());
   const ready = ack && (mode === "file" ? Boolean(file) : mode === "link" ? validUrl : text.trim().length >= 100);
@@ -118,14 +120,14 @@ export function AddDocumentModal() {
     if (!ready || !engine.model) return;
     if (mode === "file" && file) {
       const lower = file.name.toLowerCase();
-      add({ file, ackModel: engine.model, name: file.name, kind: lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".docx") ? "docx" : "text" });
+      add({ file, engine: engine.id, ackModel: engine.model, name: file.name, kind: lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".docx") ? "docx" : "text" });
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
     } else if (mode === "link") {
-      add({ url: url.trim(), ackModel: engine.model, name: url.trim().replace(/^https:\/\/(www\.)?/, ""), kind: "link" });
+      add({ url: url.trim(), engine: engine.id, ackModel: engine.model, name: url.trim().replace(/^https:\/\/(www\.)?/, ""), kind: "link" });
       setUrl("");
     } else {
-      add({ text, ackModel: engine.model, name: "Pasted notes", kind: "text" });
+      add({ text, engine: engine.id, ackModel: engine.model, name: "Pasted notes", kind: "text" });
       setText("");
     }
   };
@@ -178,6 +180,8 @@ export function AddDocumentModal() {
                 <p className="muted">At least 100 characters.</p>
               </div>
             )}
+
+            <ModelPicker engine={session.models.documents} value={choice} onChange={(id) => { setChoice(id); setAck(false); }} />
 
             <div className="consent-box">
               <label className="tick">

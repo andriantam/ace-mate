@@ -44,7 +44,11 @@ func (s *Server) runDocument(ctx context.Context, t *db.Task, emit func(map[stri
 		in.Text = string(t.Input)
 	}
 
-	p, verification, err := s.docs.ParseResume(ctx, in, func(ev engine.Event) {
+	eng, _, ok := s.pick(toolDocs, t.Engine)
+	if !ok {
+		return worker.Permanent(&engine.UserError{Msg: "The AI model you chose is no longer available. Add the document again and pick another."})
+	}
+	p, verification, err := eng.ParseResume(ctx, in, func(ev engine.Event) {
 		emit(map[string]any{"type": "progress", "step": ev.Step, "detail": ev.Detail, "pages": ev.Pages,
 			"method": ev.Method, "methods": ev.Methods, "ok": ev.OK})
 	})

@@ -64,6 +64,9 @@ export interface Engine {
   host?: string; // where resume data is sent
   privacy?: "secure" | "not_secure";
   vision?: boolean; // can read page images (OCR)
+  id?: string; // set on entries of `options`: sent back to choose this model
+  options?: Engine[]; // present when the operator configured several models the user can pick from
+  defaultId?: string; // the pre-selected entry of `options`
 }
 export interface Legal {
   version: string;
@@ -106,3 +109,9 @@ export interface Verification {
 
 /** Whether two tools use the same model at the same host. */
 export const sameModel = (a: Engine, b: Engine) => a.enabled && b.enabled && a.model === b.model && a.host === b.host;
+
+/** The model a tool will use: the user's pick from `options`, else the pre-selected one, else the tool's own default. */
+export function resolveEngine(e: Engine, choice: string): Engine {
+  const list = e.options ?? [];
+  return list.find((o) => o.id === choice) ?? list.find((o) => o.id === e.defaultId) ?? e;
+}

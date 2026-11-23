@@ -29,8 +29,8 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		"devLogin":  s.cfg.DevLogin,
 		"version":   version.Version,
 		"models": map[string]any{
-			"documents": modelView(s.cfg.DocsLLM, s.docs),
-			"journeys":  modelView(s.cfg.JourneyLLM, s.journeys),
+			"documents": s.toolView(toolDocs),
+			"journeys":  s.toolView(toolJourneys),
 		},
 		"legal": map[string]any{
 			"version": legal.Version, "effective": legal.Effective, "operator": lg.Operator, "contact": lg.Contact,
@@ -45,6 +45,20 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// toolView is the default model of a tool plus, when the operator configured several,
+// the models a user can pick from.
+func (s *Server) toolView(tool string) map[string]any {
+	l, e := s.cfg.DocsLLM, s.docs
+	if tool == toolJourneys {
+		l, e = s.cfg.JourneyLLM, s.journeys
+	}
+	v := modelView(l, e)
+	if list, sel := s.modelChoices(tool); list != nil {
+		v["options"], v["defaultId"] = list, sel
+	}
+	return v
 }
 
 // modelView tells users which model a tool uses and where their data goes.

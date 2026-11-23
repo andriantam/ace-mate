@@ -55,9 +55,10 @@ type Config struct {
 	DevLogin    bool
 	TrustProxy  bool // honour X-Forwarded-For for rate limiting (set behind a proxy)
 	DailyLimit  int
-	LLM         LLM // the default model
-	DocsLLM     LLM // reads resumes, documents and links (DOCS_LLM_*, else the default)
-	JourneyLLM  LLM // analyses job posts and writes journeys (JOURNEY_LLM_*, else the default)
+	LLM         LLM      // the default model
+	DocsLLM     LLM      // reads resumes, documents and links (DOCS_LLM_*, else the default)
+	JourneyLLM  LLM      // analyses job posts and writes journeys (JOURNEY_LLM_*, else the default)
+	Choices     []Choice // models users can pick per upload or job (ANTHROPIC_*, OPENROUTER_*)
 	Legal       Legal
 	// GoogleBirthday requests the user's birthday from Google (a sensitive scope that
 	// needs Google's app verification in production). Off by default: see README.
@@ -148,6 +149,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.LLM = def
+	if c.Choices, err = loadChoices(def); err != nil {
+		return nil, err
+	}
 	if c.Production && c.Legal.Contact == "" {
 		return nil, errors.New("APP_ENV=production requires LEGAL_CONTACT_EMAIL (shown in the Privacy Policy)")
 	}

@@ -26,6 +26,7 @@ type Server struct {
 	auth     *auth.Auth
 	docs     *engine.Engine // reads resumes, documents and links; nil when no LLM is configured
 	journeys *engine.Engine // analyses job posts and writes journeys; nil when no LLM is configured
+	options  []Option       // models users can pick per upload or job (see engines.go)
 	ui       fs.FS
 	origin   string
 	ctx      context.Context
@@ -39,6 +40,7 @@ type Server struct {
 // Engines are the AI engines for each tool. They may share one model.
 type Engines struct {
 	Docs, Journeys *engine.Engine
+	Options        []Option // optional: models users can choose between
 }
 
 // New builds the server and starts its background workers, which run until ctx is
@@ -46,7 +48,7 @@ type Engines struct {
 func New(ctx context.Context, cfg *config.Config, d *db.DB, a *auth.Auth, e Engines, ui fs.FS) *Server {
 	u, _ := url.Parse(cfg.BaseURL)
 	s := &Server{
-		cfg: cfg, db: d, auth: a, docs: e.Docs, journeys: e.Journeys, ui: ui, ctx: ctx,
+		cfg: cfg, db: d, auth: a, docs: e.Docs, journeys: e.Journeys, options: e.Options, ui: ui, ctx: ctx,
 		origin:      u.Scheme + "://" + u.Host,
 		authLimit:   newLimiter(rate.Limit(1), 10),
 		apiLimit:    newLimiter(rate.Limit(20), 60),

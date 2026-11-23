@@ -35,6 +35,7 @@ type newJobReq struct {
 	URL    string `json:"url"`
 	JDText string `json:"jdText"`
 	Notes  string `json:"notes"`
+	Engine string `json:"engine"` // the model the user picked; empty is the site default
 }
 
 func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
@@ -61,6 +62,10 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		writeErr(w, http.StatusServiceUnavailable, "Building journeys needs an AI model. See the README to configure one.")
 		return
 	}
+	if _, _, ok := s.pick(toolJourneys, req.Engine); !ok {
+		writeErr(w, http.StatusBadRequest, "That AI model isn't available. Reload the page and choose again.")
+		return
+	}
 	profile, err := s.db.GetProfile(r.Context(), u.ID)
 	if err != nil {
 		serverError(w, err)
@@ -83,7 +88,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		writeErr(w, http.StatusTooManyRequests, "You already have journeys being built. Wait for them to finish.")
 		return
 	}
-	id, err := s.db.InsertJob(r.Context(), u.ID, db.NewJob{URL: req.URL, Notes: req.Notes, JDText: req.JDText})
+	id, err := s.db.InsertJob(r.Context(), u.ID, db.NewJob{URL: req.URL, Notes: req.Notes, JDText: req.JDText, Engine: engineID(req.Engine)})
 	if err != nil {
 		serverError(w, err)
 		return
