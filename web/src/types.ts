@@ -94,6 +94,7 @@ export interface Dashboard { profile: { data: Profile } | null; jobs: JobCard[];
 export interface Job {
   id: string; url: string; title: string; status: "pending" | "ready" | "failed"; error: string;
   journey: Journey | null; progress: Progress; people: People;
+  engine?: Engine; // the model the user picked for this journey
 }
 
 export interface Verification {

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type JobEvent } from "../api";
 import { freshRun, retryLine, type Run } from "../progress";
 import { useSession } from "../session";
-import { sameModel } from "../types";
+import type { Engine } from "../types";
 import { PrivacyPill, RunBar } from "./AddDocument";
 
 const STAGES = ["Reading the job", "Assessing your fit", "Writing your journey", "Saving", "Done"] as const;
@@ -77,19 +77,21 @@ function advance(r: Run, ev: JobEvent, model: string): Run {
 
 export function JourneyProgress({
   jobId,
+  engine: picked,
   onFinished,
   onUpdate,
   compact,
 }: {
   jobId: string;
+  /** The model this journey was started with; falls back to the site default. */
+  engine?: Engine;
   onFinished: () => void;
   /** Called when new parts of the journey are ready to show. */
   onUpdate?: () => void;
   compact?: boolean;
 }) {
   const { session } = useSession();
-  const engine = session?.models.journeys;
-  const shared = session ? sameModel(session.models.journeys, session.models.documents) : false;
+  const engine = picked ?? session?.models.journeys;
   const model = engine?.displayName || engine?.model || "The AI model";
   const [run, setRun] = useState<Run>({ ...freshRun(), message: "Starting…" });
   const [started] = useState(() => Date.now());
@@ -148,7 +150,7 @@ export function JourneyProgress({
       <h2 style={{ margin: "0 0 4px" }}>Building your journey</h2>
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
         Built by <b>{model}</b> <PrivacyPill privacy={engine?.privacy} />
-        {engine?.host ? <> via <code>{engine.host}</code></> : null}{shared ? ", the same model that reads your documents" : ""}.
+        {engine?.host ? <> via <code>{engine.host}</code></> : null}.
       </p>
       <RunBar run={run} started={started} stages={STAGES} />
       {run.log.length > 1 ? (

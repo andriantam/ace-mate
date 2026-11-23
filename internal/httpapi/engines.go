@@ -77,3 +77,10 @@ func engineID(id string) string {
 	}
 	return id
 }
+
+func engineIDOrDefault(id string) string {
+	if id == "" {
+		return defaultID
+	}
+	return id
+}

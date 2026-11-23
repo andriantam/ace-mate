@@ -170,6 +170,7 @@ type jobView struct {
 	Journey  *model.Journey `json:"journey"`
 	Progress model.Progress `json:"progress"`
 	People   model.People   `json:"people"`
+	Engine   any            `json:"engine"` // the model the user picked for this journey
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
@@ -186,7 +187,11 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People})
+	v := jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People}
+	if e, l, ok := s.pick(toolJourneys, j.Engine); ok {
+		v.Engine = engineView(engineIDOrDefault(j.Engine), l, e)
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Server) deleteJob(w http.ResponseWriter, r *http.Request, u *db.User) {
