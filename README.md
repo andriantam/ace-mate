@@ -173,7 +173,7 @@ For UI hot reload, run `make dev` in one terminal and `cd web && npm run dev` in
 AceMate is one binary that needs Postgres. Use a container host or a VM, not serverless functions: the server runs background workers.
 
 ```bash
-docker build --build-arg VERSION=27.0.1 -t acemate .
+docker build --build-arg VERSION=27.1.0 -t acemate .
 docker run -p 8080:8080 --env-file prod.env acemate
 ```
 

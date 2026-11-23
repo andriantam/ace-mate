@@ -13,7 +13,7 @@ services:
     build:
       context: .
       args:
-        VERSION: ${VERSION:-27.0.1}
+        VERSION: ${VERSION:-27.1.0}
     env_file:
       - path: .env
         required: false
