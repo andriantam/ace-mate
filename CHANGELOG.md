@@ -6,6 +6,16 @@ All notable changes to AceMate are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Choose the AI model for each document upload and each job application. Set `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` and a picker appears, with each model's Secure / Not secure label. The pick is stored with the task and the job, so retries use the same model. Migration `0003` adds the columns.
+- The server logs which model reads each document.
+
+### Fixed
+
+- A profile row with no data (from an earlier pre-release database) no longer fails every request that reads the profile; it reads as "no profile". Migration `0002` backfills such rows with an empty profile and enforces `NOT NULL`, without deleting anything.
+- The progress text for uploads and journeys now names the model the user picked, not the site default.
+
 ## [27.0.1] - 2026-11-22
 
 ### Fixed

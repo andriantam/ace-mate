@@ -18,15 +18,20 @@ type ProfileRow struct {
 func (d *DB) GetProfile(ctx context.Context, userID string) (*ProfileRow, error) {
 	var out *ProfileRow
 	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		var r ProfileRow
-		err := tx.QueryRow(ctx, `SELECT data FROM profile WHERE user_id=$1`, userID).Scan(&r.Data)
+		// Scan into a pointer so a legacy row with data IS NULL reads as "no profile"
+		// instead of failing the whole request.
+		var data *model.Profile
+		err := tx.QueryRow(ctx, `SELECT data FROM profile WHERE user_id=$1`, userID).Scan(&data)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		out = &r
+		if data == nil {
+			return nil
+		}
+		out = &ProfileRow{Data: *data}
 		return nil
 	})
 	return out, err

@@ -61,6 +61,32 @@ func run() error {
 		return err
 	}
 
+	// Models users can pick between (ANTHROPIC_* and OPENROUTER_* keys). A model that is also
+	// the default reuses its engine. With no default configured, the first choice becomes it.
+	var options []httpapi.Option
+	for _, c := range cfg.Choices {
+		var e *engine.Engine
+		switch {
+		case docs != nil && cfg.DocsLLM.Same(c.LLM):
+			e = docs
+		case journeys != nil && cfg.JourneyLLM.Same(c.LLM):
+			e = journeys
+		default:
+			if e, err = buildEngine(c.ID, c.LLM); err != nil {
+				return err
+			}
+		}
+		options = append(options, httpapi.Option{ID: c.ID, LLM: c.LLM, Engine: e})
+	}
+	if len(options) > 0 {
+		if docs == nil {
+			docs, cfg.DocsLLM = options[0].Engine, options[0].LLM
+		}
+		if journeys == nil {
+			journeys, cfg.JourneyLLM = options[0].Engine, options[0].LLM
+		}
+	}
+
 	a := auth.New(ctx, cfg, d)
 	for _, p := range a.Providers {
 		slog.Info("sign-in provider ready", "provider", p.ID)
@@ -79,7 +105,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	srv := httpapi.New(ctx, cfg, d, a, httpapi.Engines{Docs: docs, Journeys: journeys}, ui)
+	srv := httpapi.New(ctx, cfg, d, a, httpapi.Engines{Docs: docs, Journeys: journeys, Options: options}, ui)
 
 	go func() {
 		t := time.NewTicker(10 * time.Minute)

@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { PrivacyPill } from "../components/AddDocument";
 import { useSession } from "../session";
-import { sameModel } from "../types";
+import { ModelPicker } from "../components/ModelPicker";
+import { resolveEngine, sameModel } from "../types";
 
 export function NewJob() {
   const { session } = useSession();
@@ -13,6 +14,8 @@ export function NewJob() {
   const [url, setUrl] = useState("");
   const [jdText, setJdText] = useState("");
   const [notes, setNotes] = useState("");
+  const [choice, setChoice] = useState(""); // the model the user picked; "" is the pre-selected one
+  const pick = session ? resolveEngine(session.models.journeys, choice) : undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +32,7 @@ export function NewJob() {
           setBusy(true);
           setError("");
           try {
-            const { id } = await api.createJob({ url, jdText, notes });
+            const { id } = await api.createJob({ url, jdText, notes, engine: pick?.id });
             navigate(`/jobs/${id}`);
           } catch (err) {
             setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -45,11 +48,12 @@ export function NewJob() {
         <textarea value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="Paste the full job description…" />
         <label className="f">What do you know about this job? People, team, location, band, salary, what the recruiter said…</label>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Hiring manager is…, team is highly technical, senior grade, needs work rights…" />
-        {engine && session ? (
+        {engine && session ? <ModelPicker engine={session.models.journeys} value={choice} onChange={setChoice} /> : null}
+        {engine && session && pick ? (
           <p className="muted" style={{ fontSize: 12.5, margin: "14px 0 0" }}>
-            ⓘ <b>{session.models.journeys.displayName || session.models.journeys.model}</b> <PrivacyPill privacy={session.models.journeys.privacy} /> builds the journey
-            {session.models.journeys.host ? <> at <code>{session.models.journeys.host}</code></> : null}
-            {sameModel(session.models.journeys, session.models.documents) ? ", the same model that reads your documents" : ""}. It receives the job description, your notes and your profile summary. It takes about ten AI calls, so allow a few minutes.
+            ⓘ <b>{pick.displayName || pick.model}</b> <PrivacyPill privacy={pick.privacy} /> builds the journey
+            {pick.host ? <> at <code>{pick.host}</code></> : null}
+            {sameModel(pick, resolveEngine(session.models.documents, "")) ? ", the same model that reads your documents" : ""}. It receives the job description, your notes and your profile summary. It takes about ten AI calls, so allow a few minutes.
           </p>
         ) : null}
         <div className="row" style={{ marginTop: 16, justifyContent: "flex-end" }}>

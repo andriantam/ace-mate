@@ -76,6 +76,7 @@ type Job struct {
 	Company   string
 	Status    string
 	Error     string
+	Engine    string // the model the user picked for this journey; "" is the site default
 	Journey   *model.Journey
 	People    model.People
 	Progress  model.Progress
@@ -86,9 +87,9 @@ func (d *DB) GetJob(ctx context.Context, userID, jobID string) (*Job, error) {
 	var j Job
 	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
-			SELECT id::text, COALESCE(url,''), notes, COALESCE(jd_text,''), title, company, status, COALESCE(error,''), journey, people, created_at
+			SELECT id::text, COALESCE(url,''), notes, COALESCE(jd_text,''), title, company, status, COALESCE(error,''), engine, journey, people, created_at
 			FROM job WHERE id=$1 AND user_id=$2`, jobID, userID).
-			Scan(&j.ID, &j.URL, &j.Notes, &j.JDText, &j.Title, &j.Company, &j.Status, &j.Error, &j.Journey, &j.People, &j.CreatedAt)
+			Scan(&j.ID, &j.URL, &j.Notes, &j.JDText, &j.Title, &j.Company, &j.Status, &j.Error, &j.Engine, &j.Journey, &j.People, &j.CreatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -121,8 +122,8 @@ func (d *DB) GetJob(ctx context.Context, userID, jobID string) (*Job, error) {
 }
 
 type NewJob struct {
-	URL, Notes, JDText, Title, Company string
-	Journey                            *model.Journey
+	URL, Notes, JDText, Title, Company, Engine string
+	Journey                                    *model.Journey
 }
 
 func (d *DB) InsertJob(ctx context.Context, userID string, n NewJob) (string, error) {
@@ -137,9 +138,9 @@ func (d *DB) InsertJob(ctx context.Context, userID string, n NewJob) (string, er
 	}
 	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			INSERT INTO job (user_id,url,notes,jd_text,title,company,journey,status)
-			VALUES ($1,NULLIF($2,''),$3,NULLIF($4,''),$5,$6,$7,$8) RETURNING id::text`,
-			userID, n.URL, n.Notes, n.JDText, title, n.Company, n.Journey, status).Scan(&id)
+			INSERT INTO job (user_id,url,notes,jd_text,title,company,journey,status,engine)
+			VALUES ($1,NULLIF($2,''),$3,NULLIF($4,''),$5,$6,$7,$8,$9) RETURNING id::text`,
+			userID, n.URL, n.Notes, n.JDText, title, n.Company, n.Journey, status, n.Engine).Scan(&id)
 	})
 	return id, err
 }
