@@ -2,6 +2,26 @@
 
 # AceMate
 
+[![Build and tests](https://img.shields.io/github/actions/workflow/status/andriantam/ace-mate/ci.yml?branch=main&label=build%20%26%20tests&logo=githubactions&logoColor=white)](https://github.com/andriantam/ace-mate/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/andriantam/ace-mate?logo=github)](https://github.com/andriantam/ace-mate/stargazers)
+[![License: MIT](https://img.shields.io/github/license/andriantam/ace-mate)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/andriantam/ace-mate?logo=go&logoColor=white)](go.mod)
+[![Last commit](https://img.shields.io/github/last-commit/andriantam/ace-mate)](https://github.com/andriantam/ace-mate/commits/main)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+
+![Go](https://img.shields.io/badge/go-%2300ADD8.svg?style=for-the-badge&logo=go&logoColor=white)
+![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+
+![Claude](https://img.shields.io/badge/claude-%23D97757.svg?style=for-the-badge&logo=claude&logoColor=white)
+![OpenAI-compatible APIs](https://img.shields.io/badge/OpenAI--compatible-%23412991.svg?style=for-the-badge)
+![Google sign-in](https://img.shields.io/badge/google%20sign--in-%234285F4.svg?style=for-the-badge&logo=google&logoColor=white)
+![Okta sign-in](https://img.shields.io/badge/okta%20sign--in-%23007DC1.svg?style=for-the-badge&logo=okta&logoColor=white)
+
 Interview preparation for software engineers. Add your resume and the jobs you're applying for, and an AI model builds a personal **journey** for each application: what to learn about the job's tech stack (explained in terms of the stacks you already know), the industry, the people you'll meet, and the HR questions you'll be asked. A readiness score moves as you work through it.
 
 - **Your profile as a map.** Every document you add (resume, Word file, notes, GitHub profile, personal site) adds to a living graph of your roles, skills, industries and sources, with a timeline of your career.
