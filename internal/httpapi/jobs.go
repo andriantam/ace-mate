@@ -165,6 +165,8 @@ type jobView struct {
 	Journey  *model.Journey `json:"journey"`
 	Progress model.Progress `json:"progress"`
 	People   model.People   `json:"people"`
+	// The tasks and HR questions shared with the user's other jobs, keyed by ref.
+	Shared map[string]db.SharedRef `json:"shared"`
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
@@ -181,7 +183,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People})
+	shared, err := s.db.SharedRefs(r.Context(), u.ID, id)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People, Shared: shared})
 }
 
 func (s *Server) deleteJob(w http.ResponseWriter, r *http.Request, u *db.User) {

@@ -6,6 +6,7 @@ Interview preparation for software engineers. Add your resume and the jobs you'r
 
 - **Your profile as a map.** Every document you add (resume, Word file, notes, GitHub profile, personal site) adds to a living graph of your roles, skills, industries and sources, with a timeline of your career.
 - **One journey per job.** Four lanes run in parallel: tech stack, industry, the people, and HR questions. Each milestone has a recruiter-style brief, tasks, a quiz or scenario, reading, and a capstone project.
+- **Prep once, use everywhere.** Tasks that several journeys share (the same exercise for the same kind of role) are ticked once for all of them, and generic HR questions live in an Interview FAQ on your profile, answered once.
 - **Bring your own model.** Claude, or any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, DeepSeek, Groq, vLLM). Use one model for everything, or a different model for reading documents and for writing journeys.
 - **Private by default.** Sign in with Google or Okta. Each user's data is isolated by Postgres row-level security. Uploaded files are deleted as soon as they have been read.
 

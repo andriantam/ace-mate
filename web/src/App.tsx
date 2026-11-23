@@ -7,6 +7,7 @@ import { DocsProvider, useDocs } from "./docs";
 import { Account, Avatar } from "./pages/Account";
 import { Consent } from "./pages/Consent";
 import { Dashboard } from "./pages/Dashboard";
+import { Faq } from "./pages/Faq";
 import { JobPage } from "./pages/JobPage";
 import { Jobs } from "./pages/Jobs";
 import { Landing } from "./pages/Landing";
@@ -20,7 +21,15 @@ import { useSession } from "./session";
 // and it appears in the header on every screen size.
 type NavItem = { to: string; label: string; match?: (path: string) => boolean; children?: NavItem[] };
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Profile" },
+  {
+    to: "/dashboard",
+    label: "Profile",
+    match: (p) => p === "/dashboard" || p.startsWith("/profile/"),
+    children: [
+      { to: "/dashboard", label: "Profile Map" },
+      { to: "/profile/faq", label: "Interview FAQ" },
+    ],
+  },
   {
     to: "/jobs",
     label: "Jobs",
@@ -207,6 +216,7 @@ export function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/dashboard" element={<Private><Dashboard /></Private>} />
+          <Route path="/profile/faq" element={<Private><Faq /></Private>} />
           <Route path="/jobs" element={<Private><Jobs /></Private>} />
           <Route path="/jobs/new" element={<Private><NewJob /></Private>} />
           <Route path="/jobs/:id" element={<Private><JobPage /></Private>} />

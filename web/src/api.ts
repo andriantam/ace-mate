@@ -1,4 +1,4 @@
-import type { Dashboard, DocumentRow, Job, People, Session, Verification } from "./types";
+import type { Dashboard, DocumentRow, Job, People, Prep, Session, Ticked, Verification } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -41,8 +41,13 @@ export const api = {
   deleteJob: (id: string) => request<{ ok: true }>("DELETE", `/api/jobs/${id}`),
   fillJob: (id: string) => request<{ ok: true }>("POST", `/api/jobs/${id}/fill`),
   retryJob: (id: string) => request<{ ok: true }>("POST", `/api/jobs/${id}/retry`),
-  setProgress: (id: string, item: string, done: boolean) => request<{ ok: true }>("PUT", `/api/jobs/${id}/progress`, { item, done }),
+  setProgress: (id: string, item: string, done: boolean) =>
+    request<{ ok: true; changed: Ticked[] }>("PUT", `/api/jobs/${id}/progress`, { item, done }),
   savePeople: (id: string, people: People) => request<{ ok: true }>("PUT", `/api/jobs/${id}/people`, people),
+  prep: () => request<Prep>("GET", "/api/prep"),
+  setPrepAnswer: (id: string, answer: string) => request<{ ok: true }>("PUT", `/api/prep/${id}/answer`, { answer }),
+  setPrepDone: (id: string, done: boolean) => request<{ ok: true; changed: Ticked[] }>("PUT", `/api/prep/${id}/done`, { done }),
+  resyncPrep: () => request<{ ok: true }>("POST", "/api/prep/resync"),
   deleteAccount: (confirm: string) => request<{ ok: true }>("DELETE", "/api/account", { confirm }),
 };
 

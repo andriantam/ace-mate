@@ -6,6 +6,17 @@ All notable changes to AceMate are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Shared prep across job applications. When a journey is written, the AI compares its tasks and HR questions with your other journeys. A task that asks for the same deliverable in the same role track (frontend, backend and so on) is linked, so ticking it in one journey ticks it in all of them. A JavaScript project for a frontend role and one for a backend role stay separate. Company-specific tasks and questions are never shared.
+- Interview FAQ on your profile (Profile → Interview FAQ): the generic HR questions your jobs ask ("What is your greatest weakness?", "Tell me about a conflict"), each with your own answer written once, the tip from every job that asks it, and search. A second tab lists the shared tasks by role track. Answers are kept even if you delete the jobs that asked them, and they are included in your data export.
+- In a journey, shared tasks show a "Shared · N other jobs" pill, and HR questions in your FAQ show your answer with a link to edit it.
+
+### Changed
+
+- Upgrading keeps all existing data: the new tables are added alongside the old ones and nothing is rewritten. Journeys written before this version are linked by a background pass on the first start, and ticked tasks carry over to the other journeys they are linked to (ticks are only ever merged, never removed). "Find overlaps again" on the FAQ runs the comparison again.
+- The API flow test uses `TEST_DATABASE_URL` when it is set, like the database tests.
+
 ## [27.0.1] - 2026-11-22
 
 ### Fixed

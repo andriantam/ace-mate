@@ -56,8 +56,11 @@ func New(ctx context.Context, cfg *config.Config, d *db.DB, a *auth.Auth, e Engi
 		s.work = worker.New(d,
 			worker.Kind{Name: taskDocument, Concurrency: 4, Run: s.runDocument, GiveUp: s.documentGaveUp, Message: userMessage},
 			worker.Kind{Name: taskJourney, Concurrency: 4, Run: s.runJourney, GiveUp: s.journeyGaveUp, Message: userMessage},
+			// One at a time, so each journey is compared with the ones linked before it.
+			worker.Kind{Name: taskShare, Concurrency: 1, Run: s.runShare, GiveUp: s.shareGaveUp, Message: userMessage},
 		)
 		s.work.Start(ctx)
+		go s.backfillShared(ctx)
 	}
 	return s
 }
@@ -103,6 +106,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/jobs/{id}/fill", s.authed(s.fillJob))
 	mux.Handle("PUT /api/jobs/{id}/progress", s.authed(s.setProgress))
 	mux.Handle("PUT /api/jobs/{id}/people", s.authed(s.savePeople))
+	mux.Handle("GET /api/prep", s.authed(s.getPrep))
+	mux.Handle("PUT /api/prep/{id}/answer", s.authed(s.setPrepAnswer))
+	mux.Handle("PUT /api/prep/{id}/done", s.authed(s.setPrepDone))
+	mux.Handle("POST /api/prep/resync", s.authed(s.resyncPrep))
 	mux.Handle("GET /api/export", s.signedIn(s.export))
 	mux.Handle("DELETE /api/account", s.signedIn(s.deleteAccount))
 

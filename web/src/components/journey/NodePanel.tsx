@@ -1,5 +1,6 @@
+import { Link } from "react-router-dom";
 import { nodeScore, pct } from "../../readiness";
-import { type Journey, type JourneyNode, type People, type Progress } from "../../types";
+import { type Journey, type JourneyNode, type People, type Progress, type SharedRef } from "../../types";
 import { Md } from "./Md";
 import { aspectBy, safeHref } from "./util";
 import { PeopleEditor } from "./PeopleEditor";
@@ -8,10 +9,10 @@ import { Quiz, Scenario } from "./Tests";
 // The detail panel for one milestone: brief, tasks, test, reading and people notes.
 
 export function NodePanel({
-  n, j, progress, toggle, go, jobId, initialPeople, waiting, failed, onFill, building,
+  n, j, progress, toggle, go, jobId, initialPeople, shared = {}, waiting, failed, onFill, building,
 }: {
   n: JourneyNode; j: Journey; progress: Progress; toggle: (item: string, done: boolean) => void; go: (id: string) => void;
-  jobId: string; initialPeople: People; waiting?: boolean; failed?: boolean; onFill?: () => void; building?: boolean;
+  jobId: string; initialPeople: People; shared?: Record<string, SharedRef>; waiting?: boolean; failed?: boolean; onFill?: () => void; building?: boolean;
 }) {
   const a = aspectBy[n.aspect];
   if (waiting) {
@@ -92,7 +93,10 @@ export function NodePanel({
             return (
               <label key={key} className={`task ${d ? "done" : ""}`}>
                 <input type="checkbox" checked={d} onChange={(e) => toggle(key, e.target.checked)} />
-                <span><Md text={t} /></span>
+                <span>
+                  <Md text={t} />
+                  <SharedPill s={shared[key]} />
+                </span>
               </label>
             );
           })}
@@ -102,9 +106,21 @@ export function NodePanel({
       {n.hrQuestions.length ? (
         <>
           <h3>The {n.hrQuestions.length} questions</h3>
-          {n.hrQuestions.map((q, i) => (
-            <details key={i} className="hrq"><summary>{i + 1}. {q.q}</summary><p>{q.tip}</p></details>
-          ))}
+          {n.hrQuestions.map((q, i) => {
+            const s = shared[`${n.id}:q${i}`];
+            return (
+              <details key={i} className="hrq">
+                <summary>{i + 1}. {q.q}{s ? <span className="pill hr" title="Asked in every job that shares it; answer it once in your FAQ">In your FAQ</span> : null}</summary>
+                <p>{q.tip}</p>
+                {s ? (
+                  <div className="hrq-answer">
+                    {s.answer ? <><b>Your answer</b><Md text={s.answer} /></> : <span className="muted">No answer yet.</span>}
+                    <Link to={`/profile/faq#${s.id}`}>{s.answer ? "Edit in FAQ" : "Answer in FAQ"} →</Link>
+                  </div>
+                ) : null}
+              </details>
+            );
+          })}
         </>
       ) : null}
 
@@ -136,5 +152,17 @@ export function NodePanel({
         </>
       ) : null}
     </div>
+  );
+}
+
+/** Marks a task this journey shares with other jobs: ticking it ticks them all. */
+function SharedPill({ s }: { s?: SharedRef }) {
+  if (!s || s.kind !== "task") return null;
+  const n = s.others.length;
+  const title = n ? `Also in: ${s.others.map((o) => o.title).join(", ")}. Ticking it here ticks it there too.` : "Shared task";
+  return (
+    <span className="pill shared" title={title}>
+      {n ? `Shared · ${n} other job${n === 1 ? "" : "s"}` : "Shared"}
+    </span>
   );
 }

@@ -190,16 +190,6 @@ func (d *DB) DeleteJob(ctx context.Context, userID, jobID string) error {
 	})
 }
 
-func (d *DB) SetProgress(ctx context.Context, userID, jobID, item string, done bool) error {
-	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		// The policy's WITH CHECK also verifies the job belongs to this user.
-		_, err := tx.Exec(ctx, `
-			INSERT INTO progress (job_id,user_id,item,done) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (job_id,item) DO UPDATE SET done=EXCLUDED.done, updated_at=now()`, jobID, userID, item, done)
-		return err
-	})
-}
-
 func (d *DB) SavePeople(ctx context.Context, userID, jobID string, p model.People) error {
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE job SET people=$3, updated_at=now() WHERE id=$1 AND user_id=$2`, jobID, userID, p)

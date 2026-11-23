@@ -124,10 +124,11 @@ type TaskProgress struct {
 }
 
 // Progress returns the events after `after` of the latest task the user started on subject.
+// Linking shared prep (kind "share") runs quietly after a journey and is not reported.
 func (d *DB) Progress(ctx context.Context, userID, subject string, after int64) (TaskProgress, error) {
 	out := TaskProgress{Next: after, Events: []json.RawMessage{}}
 	var taskID, status string
-	err := d.Pool.QueryRow(ctx, `SELECT id, status FROM task WHERE user_id=$1 AND subject=$2 ORDER BY created_at DESC LIMIT 1`,
+	err := d.Pool.QueryRow(ctx, `SELECT id, status FROM task WHERE user_id=$1 AND subject=$2 AND kind <> 'share' ORDER BY created_at DESC LIMIT 1`,
 		userID, subject).Scan(&taskID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil

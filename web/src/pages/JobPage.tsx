@@ -36,6 +36,7 @@ export function JobPage() {
         journey={job.journey}
         initialProgress={job.progress}
         initialPeople={job.people}
+        shared={job.shared}
         building={building}
         onFill={fill}
         banner={building ? <JourneyProgress compact jobId={job.id} onFinished={load} onUpdate={load} /> : null}
@@ -54,5 +55,5 @@ export function JobPage() {
       </div>
     );
   }
-  return <JourneyView key={job.id} jobId={job.id} url={job.url} journey={job.journey} initialProgress={job.progress} initialPeople={job.people} />;
+  return <JourneyView key={job.id} jobId={job.id} url={job.url} journey={job.journey} initialProgress={job.progress} initialPeople={job.people} shared={job.shared} />;
 }

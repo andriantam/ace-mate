@@ -15,6 +15,8 @@ type Export struct {
 	Profile    *ProfileRow   `json:"profile"`
 	Documents  []Document    `json:"documents"`
 	Jobs       []ExportedJob `json:"jobs"`
+	// Tasks and HR questions shared across jobs, with the user's own answers.
+	Shared []SharedItem `json:"shared"`
 }
 
 // ExportAccount is everything we hold about the user's identity and consent.
@@ -58,6 +60,9 @@ func (d *DB) ExportAll(ctx context.Context, userID string) (*Export, error) {
 	}
 	out := &Export{ExportedAt: time.Now().UTC(), Profile: p, Jobs: []ExportedJob{}}
 	if out.Documents, err = d.ListDocuments(ctx, userID); err != nil {
+		return nil, err
+	}
+	if out.Shared, err = d.ListShared(ctx, userID); err != nil {
 		return nil, err
 	}
 	a := &out.Account

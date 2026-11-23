@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -136,7 +137,7 @@ func TestConsentAndResumeFlow(t *testing.T) {
 		t.Skip("needs the embedded Postgres")
 	}
 	ctx := context.Background()
-	d, err := db.Open(ctx, "", t.TempDir(), false)
+	d, err := db.Open(ctx, os.Getenv("TEST_DATABASE_URL"), t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
