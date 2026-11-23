@@ -171,6 +171,8 @@ type jobView struct {
 	Progress model.Progress `json:"progress"`
 	People   model.People   `json:"people"`
 	Engine   any            `json:"engine"` // the model the user picked for this journey
+	// The tasks and HR questions shared with the user's other jobs, keyed by ref.
+	Shared map[string]db.SharedRef `json:"shared"`
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
@@ -187,7 +189,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u *db.User) {
 		serverError(w, err)
 		return
 	}
-	v := jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People}
+	shared, err := s.db.SharedRefs(r.Context(), u.ID, id)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	v := jobView{ID: j.ID, URL: j.URL, Title: j.Title, Status: j.Status, Error: j.Error, Journey: j.Journey, Progress: j.Progress, People: j.People, Shared: shared}
 	if e, l, ok := s.pick(toolJourneys, j.Engine); ok {
 		v.Engine = engineView(engineIDOrDefault(j.Engine), l, e)
 	}

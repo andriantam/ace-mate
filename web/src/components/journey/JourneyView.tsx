@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api";
 import { aspectScore, bestNext, overallScore, pct, unwritten } from "../../readiness";
-import { ASPECTS, type Journey, type People, type Progress } from "../../types";
+import { ASPECTS, type Journey, type People, type Progress, type SharedRef } from "../../types";
 import { Ring } from "../Ring";
 import { useMobile } from "../../useMobile";
 import { JourneyMap } from "./JourneyMap";
@@ -19,6 +19,8 @@ type Props = {
   journey: Journey;
   initialProgress: Progress;
   initialPeople: People;
+  /** Tasks and HR questions shared with the user's other jobs, keyed by ref. */
+  shared?: Record<string, SharedRef>;
   /** Shown above the journey while parts of it are still being written. */
   banner?: React.ReactNode;
   /** Retries the parts that couldn't be written. */
@@ -26,7 +28,7 @@ type Props = {
   building?: boolean;
 };
 
-export function JourneyView({ jobId, url, journey: j, initialProgress, initialPeople, banner, onFill, building }: Props) {
+export function JourneyView({ jobId, url, journey: j, initialProgress, initialPeople, shared = {}, banner, onFill, building }: Props) {
   const [progress, setProgress] = useState<Progress>(initialProgress);
   const [sel, setSel] = useState<string | null>(null);
   const [fitOpen, setFitOpen] = useState(false);
@@ -44,7 +46,12 @@ export function JourneyView({ jobId, url, journey: j, initialProgress, initialPe
     const prev = progress[item] ?? false;
     setProgress((p) => ({ ...p, [item]: done }));
     api.setProgress(jobId, item, done).then(
-      () => setSaveError(null),
+      ({ changed }) => {
+        setSaveError(null);
+        // A shared task can appear more than once in this journey: tick every copy.
+        const here = (changed ?? []).filter((c) => c.jobId === jobId);
+        if (here.length) setProgress((p) => ({ ...p, ...Object.fromEntries(here.map((c) => [c.item, done])) }));
+      },
       () => {
         setProgress((p) => ({ ...p, [item]: prev }));
         setSaveError("Couldn't save. Check your connection.");
@@ -166,6 +173,7 @@ export function JourneyView({ jobId, url, journey: j, initialProgress, initialPe
             go={setSel}
             jobId={jobId}
             initialPeople={initialPeople}
+            shared={shared}
             waiting={waiting.has(sel)}
             failed={failed.includes(sel)}
             onFill={onFill}

@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,7 +142,7 @@ func TestConsentAndResumeFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := db.Open(ctx, "", t.TempDir(), false, keys)
+	d, err := db.Open(ctx, os.Getenv("TEST_DATABASE_URL"), t.TempDir(), false, keys)
 	if err != nil {
 		t.Fatal(err)
 	}

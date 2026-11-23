@@ -76,6 +76,7 @@ func (s *Server) runJourney(ctx context.Context, t *db.Task, emit func(map[strin
 	}
 	slog.Info("journey written", "job", t.Subject, "seconds", int(time.Since(started).Seconds()), "model", eng.P.Model(), "failedParts", len(j.Failed))
 	emit(map[string]any{"type": "done"})
+	s.queueShare(ctx, t.UserID, t.Subject)
 	return nil
 }
 
@@ -91,7 +92,9 @@ func (s *Server) journeyGaveUp(ctx context.Context, t *db.Task, msg string) {
 		j.Failed, j.Pending = append(j.Failed, j.Pending...), nil
 		if err := s.db.MarkJobReady(ctx, t.UserID, t.Subject, j); err != nil {
 			slog.Error("journey: keep partial", "job", t.Subject, "err", err)
+			return
 		}
+		s.queueShare(ctx, t.UserID, t.Subject)
 		return
 	}
 	if err := s.db.MarkJobFailed(ctx, t.UserID, t.Subject, msg); err != nil {
@@ -127,4 +130,11 @@ func userMessage(err error) string {
 		return fe.Msg
 	}
 	return "Something went wrong. Please try again."
+}
+
+// queueShare links a newly written journey to the user's other journeys, in the background.
+func (s *Server) queueShare(ctx context.Context, userID, jobID string) {
+	if err := s.enqueueShare(context.WithoutCancel(ctx), userID, jobID); err != nil {
+		slog.Warn("share: queue", "job", jobID, "err", err)
+	}
 }

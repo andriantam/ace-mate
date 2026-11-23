@@ -51,7 +51,7 @@ func TestRowLevelSecurity(t *testing.T) {
 	if err := d.UpsertProfile(ctx, idA, model.Profile{Headline: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.SetProgress(ctx, idA, jobA, "t1:0", true); err != nil {
+	if _, err := d.SetProgress(ctx, idA, jobA, "t1:0", true); err != nil {
 		t.Fatal(err)
 	}
 	docA, err := d.InsertDocument(ctx, idA, "link", "github.com/a", "https://github.com/a")
@@ -124,7 +124,7 @@ func TestRowLevelSecurity(t *testing.T) {
 		}
 	})
 	t.Run("other user cannot attach progress to someone else's job", func(t *testing.T) {
-		if err := d.SetProgress(ctx, idB, jobA, "t1:1", true); err == nil {
+		if _, err := d.SetProgress(ctx, idB, jobA, "t1:1", true); err == nil {
 			t.Fatal("expected policy violation")
 		}
 	})
