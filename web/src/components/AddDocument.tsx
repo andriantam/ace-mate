@@ -120,14 +120,14 @@ export function AddDocumentModal() {
     if (!ready || !engine.model) return;
     if (mode === "file" && file) {
       const lower = file.name.toLowerCase();
-      add({ file, engine: engine.id, ackModel: engine.model, name: file.name, kind: lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".docx") ? "docx" : "text" });
+      add({ file, engine: engine.id, modelName: model, ackModel: engine.model, name: file.name, kind: lower.endsWith(".pdf") ? "pdf" : lower.endsWith(".docx") ? "docx" : "text" });
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
     } else if (mode === "link") {
-      add({ url: url.trim(), engine: engine.id, ackModel: engine.model, name: url.trim().replace(/^https:\/\/(www\.)?/, ""), kind: "link" });
+      add({ url: url.trim(), engine: engine.id, modelName: model, ackModel: engine.model, name: url.trim().replace(/^https:\/\/(www\.)?/, ""), kind: "link" });
       setUrl("");
     } else {
-      add({ text, engine: engine.id, ackModel: engine.model, name: "Pasted notes", kind: "text" });
+      add({ text, engine: engine.id, modelName: model, ackModel: engine.model, name: "Pasted notes", kind: "text" });
       setText("");
     }
   };

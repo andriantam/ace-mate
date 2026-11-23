@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/andriantam/ace-mate/internal/db"
@@ -44,10 +45,11 @@ func (s *Server) runDocument(ctx context.Context, t *db.Task, emit func(map[stri
 		in.Text = string(t.Input)
 	}
 
-	eng, _, ok := s.pick(toolDocs, t.Engine)
+	eng, llm, ok := s.pick(toolDocs, t.Engine)
 	if !ok {
 		return worker.Permanent(&engine.UserError{Msg: "The AI model you chose is no longer available. Add the document again and pick another."})
 	}
+	slog.Info("reading document", "doc", t.Subject, "choice", t.Engine, "model", llm.Model, "host", llm.Host())
 	p, verification, err := eng.ParseResume(ctx, in, func(ev engine.Event) {
 		emit(map[string]any{"type": "progress", "step": ev.Step, "detail": ev.Detail, "pages": ev.Pages,
 			"method": ev.Method, "methods": ev.Methods, "ok": ev.OK})
