@@ -120,21 +120,23 @@ func LoadKeyring(spec, dataDir string, production bool) (*Keyring, error) {
 		return nil, errors.New("APP_ENV=production requires ENCRYPTION_KEYS (generate one with: openssl rand -base64 32)")
 	}
 	path := filepath.Join(dataDir, "encryption.key")
+	const hint = " (set ENCRYPTION_KEYS to 1:<output of: openssl rand -base64 32>)"
 	if b, err := os.ReadFile(path); err == nil {
 		return ParseKeyring(string(b))
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		return nil, fmt.Errorf("ENCRYPTION_KEYS is not set and the development key in %s can't be read: %w%s", dataDir, err, hint)
 	}
 	key, err := NewDataKey()
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return nil, err
-	}
 	line := "1:" + base64.StdEncoding.EncodeToString(key)
-	if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
-		return nil, err
+	err = os.MkdirAll(dataDir, 0o700)
+	if err == nil {
+		err = os.WriteFile(path, []byte(line+"\n"), 0o600)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ENCRYPTION_KEYS is not set and a development key can't be saved in %s: %w%s", dataDir, err, hint)
 	}
 	return ParseKeyring(line)
 }

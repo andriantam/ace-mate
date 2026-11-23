@@ -142,6 +142,14 @@ func TestLoadKeyring(t *testing.T) {
 	if _, err := k2.UnwrapUserKey("u", v, w); err != nil {
 		t.Fatal("the development key must survive a restart")
 	}
+	// Where no key can be kept, the error says how to fix it.
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadKeyring("", blocker, false); err == nil || !strings.Contains(err.Error(), "set ENCRYPTION_KEYS") {
+		t.Fatalf("unwritable data dir: %v", err)
+	}
 	// An explicit setting wins over the file.
 	k3, _ := LoadKeyring(entry("7", 9), dir, false)
 	if k3.Current() != 7 {

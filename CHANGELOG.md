@@ -14,6 +14,8 @@ All notable changes to AceMate are listed here. The format follows
 - In development, without `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key`.
 - Each user's personal content is now stored encrypted with their own key: the profile, every document's name, link, extracted details and cross-check, each job's link, notes, posting text, journey and person cards, and uploaded files waiting to be read. Each value is tied to its row, so a value copied elsewhere can't be decrypted. The job title and company stay readable, so the jobs list can show and sort them.
 - The personal details your sign-in provider shares (email, name, photo link and birthday) are stored encrypted too.
+- The README has a new Encryption section: how keys work, what is and isn't encrypted, what it protects against, and how to set, back up and rotate `ENCRYPTION_KEYS`. The Privacy Policy now describes encryption at rest and its limits, and the landing page no longer says data is "visible only to you".
+- Docker Compose needs `ENCRYPTION_KEYS` in `.env`: its container can't keep a generated key, so without one it stops with a message saying what to set.
 - Data saved by an earlier version is encrypted automatically at the first start, and the readable copy is cleared. Nobody has to sign up again.
 
 ## [27.0.1] - 2026-11-22

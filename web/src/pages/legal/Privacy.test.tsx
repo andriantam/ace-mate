@@ -26,6 +26,18 @@ describe("Privacy Policy", () => {
     expect(text).toContain("Personal Data Protection Commission");
   });
 
+  it("explains encryption at rest and is honest about its limits", () => {
+    current = session();
+    const text = show(<Privacy />).container.textContent ?? "";
+    expect(text).toContain("Encryption at rest.");
+    expect(text).toContain("a key made for you alone");
+    expect(text).toContain("job titles and company names");
+    expect(text).toContain("This is not end-to-end encryption.");
+    expect(text).toContain("Deleting your account deletes your key.");
+    expect(text).toContain("and the keys that go with them");
+    expect(text).not.toMatch(/only you can|nobody can read|cannot be read by us/i);
+  });
+
   it("sends people to the Your data page, not a dashboard", () => {
     current = session();
     const { container } = show(<Privacy />);

@@ -7,7 +7,7 @@ Interview preparation for software engineers. Add your resume and the jobs you'r
 - **Your profile as a map.** Every document you add (resume, Word file, notes, GitHub profile, personal site) adds to a living graph of your roles, skills, industries and sources, with a timeline of your career.
 - **One journey per job.** Four lanes run in parallel: tech stack, industry, the people, and HR questions. Each milestone has a recruiter-style brief, tasks, a quiz or scenario, reading, and a capstone project.
 - **Bring your own model.** Claude, or any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, DeepSeek, Groq, vLLM). Use one model for everything, or a different model for reading documents and for writing journeys.
-- **Private by default.** Sign in with Google or Okta. Each user's data is isolated by Postgres row-level security. Uploaded files are deleted as soon as they have been read.
+- **Private by default.** Sign in with Google or Okta. Each user's data is isolated by Postgres row-level security, and their personal content is encrypted in the database with a key of their own ([how](#encryption)). Uploaded files are deleted as soon as they have been read.
 
 ## See it
 
@@ -33,7 +33,7 @@ Interview preparation for software engineers. Add your resume and the jobs you'r
 |---|---|
 | Server | Go: one static binary serving the JSON API, the background workers and the UI |
 | UI | React, TypeScript and Vite, embedded into the binary. ESLint and Vitest. |
-| Database | PostgreSQL (pgx) with row-level security. An embedded Postgres runs automatically in development. |
+| Database | PostgreSQL (pgx) with row-level security and per-user encryption of personal content. An embedded Postgres runs automatically in development. |
 | Background work | A task queue in Postgres with leases and automatic retries |
 | Sign-in | Google and Okta through OpenID Connect (PKCE) |
 | AI | Anthropic Go SDK, or any OpenAI-compatible chat API |
@@ -60,13 +60,15 @@ The first start downloads an embedded Postgres (about 50 MB) into `./.data`. Eve
 Prefer containers? Compose runs AceMate and its own Postgres together, so you need nothing else installed.
 
 ```bash
-cp .env.example .env     # then edit .env: your sign-in and AI model settings, and
-                         # BASE_URL=http://localhost:8080
+cp .env.example .env     # then edit .env: your sign-in and AI model settings,
+                         # BASE_URL=http://localhost:8080, and
+                         # ENCRYPTION_KEYS=1:<output of: openssl rand -base64 32>
 docker compose up --build
 ```
 
 Open http://localhost:8080.
 
+- **`ENCRYPTION_KEYS` is required.** The container can't keep a generated key, so it won't start without one. Keep the key safe: without it the data in `pgdata` can't be read. See [Encryption](#encryption).
 - **`BASE_URL` must be `http://localhost:8080`.** Compose serves port 8080, and the server rejects requests from any other address. Register `http://localhost:8080/api/auth/callback/google` as the redirect URI.
 - **Your keys stay out of the image.** `.env` is read by compose at start-up. It is not copied into the image, and git ignores it.
 - **Your data lives in the `pgdata` volume.** `docker compose down` keeps it. `docker compose down -v` deletes it.
@@ -156,16 +158,54 @@ Or run `make build` and start `bin/server`. In production, set:
 
 1. `APP_ENV=production` and an https `BASE_URL`, for example `https://prep.example.com`.
 2. `DATABASE_URL` for a managed Postgres (Neon, Supabase, RDS, …). The schema is applied on startup.
-3. `LEGAL_CONTACT_EMAIL` (required) and the other `LEGAL_*` settings, after reviewing the legal pages.
-4. The sign-in redirect URI `{BASE_URL}/api/auth/callback/<provider>` at Google or Okta.
-5. `TRUST_PROXY=true` when running behind a load balancer, reverse proxy or tunnel.
-6. A spending limit with your AI provider, and `GENERATION_DAILY_LIMIT` for each user.
+3. `ENCRYPTION_KEYS`, the master key for user data (required: the server refuses to start without it). Generate one with `openssl rand -base64 32`, set `1:<key>`, and keep a copy somewhere safe and separate from the database and its backups. See [Encryption](#encryption).
+4. `LEGAL_CONTACT_EMAIL` (required) and the other `LEGAL_*` settings, after reviewing the legal pages.
+5. The sign-in redirect URI `{BASE_URL}/api/auth/callback/<provider>` at Google or Okta.
+6. `TRUST_PROXY=true` when running behind a load balancer, reverse proxy or tunnel.
+7. A spending limit with your AI provider, and `GENERATION_DAILY_LIMIT` for each user.
 
 **Health checks.** `GET /healthz` reports that the process is up (use it for liveness). `GET /readyz` also checks the database (use it for readiness and load balancers). The container image checks itself with `/server healthcheck`.
 
 **Background work.** Reading documents and writing journeys run as tasks in a Postgres queue, so you can run several instances. A worker holds a lease on a task and renews it while it works. If an instance stops, its tasks are picked up again once the lease runs out (about two minutes), and a clean shutdown hands them back at once. When the AI service is busy or unreachable, a task is tried up to three times, waiting 20 s and then 40 s between attempts. A journey keeps the parts already written and continues from there.
 
 To run a server you host yourself on your own domain, a Cloudflare Tunnel (`cloudflared`) works well: point a subdomain at `http://localhost:<PORT>` and set `BASE_URL` to that subdomain.
+
+## Encryption
+
+AceMate encrypts each user's personal content in the database with a key that belongs to that user. Row-level security keeps users apart while the app runs. Encryption protects the data if the database itself is copied.
+
+### How it works
+
+1. **Master keys** (`ENCRYPTION_KEYS`) live outside the database: in your host's secrets, not in Postgres or its backups.
+2. **One data key per user.** When an account is created, AceMate makes a random 256-bit key for that user and stores it in the `user_key` table only *wrapped* (encrypted) by the newest master key. The restricted database role that serves user requests cannot read that table.
+3. **Values are sealed with the user's key** using AES-256-GCM with a fresh random nonce each time. Each value is also bound to its table, column, owner and row, so a value copied to another row or user fails to decrypt instead of being read in the wrong place.
+4. **The server unwraps a user's key when it works on their data**, in a web request or a background task alike, and keeps it in memory for up to an hour.
+5. **Deleting an account deletes the user's key** first, in the same transaction as the account.
+
+### What is encrypted
+
+| Encrypted | Left readable (the app needs it, or it holds no personal content) |
+|---|---|
+| Sign-in details: email, name, photo link, birthday | Job title and company (shown and sorted in the jobs list) |
+| Profile: roles, skills, industries, work rights | Ids, statuses, timestamps and error messages |
+| Documents: name, link, extracted details, cross-check report | The kind of document, language setting, whether the email is verified, consent records |
+| Jobs: link, job description, your notes, the journey, notes on people | Progress messages of background tasks (deleted an hour after the task finishes) |
+| Uploaded files waiting to be read | Server logs |
+
+### What it protects against, and what it doesn't
+
+- **Protects** against a stolen database dump, a leaked backup, and anyone browsing tables without the master key. Without `ENCRYPTION_KEYS` the content is unreadable.
+- **Does not protect** against someone who has both the database and the master key, or who controls the running server. The server has to decrypt data to work with it.
+- **Is not end-to-end encryption.** The server reads your documents in order to send them to the AI model, and the model's provider sees what is sent (see `LLM_PRIVACY`). Encryption at rest does not change that.
+
+### Keys
+
+- **Required in production.** Generate a key with `openssl rand -base64 32` and set `ENCRYPTION_KEYS=1:<key>`. The format is `version:base64key`, comma-separated.
+- **Don't lose it.** If the key is lost, the encrypted data can't be recovered. Store a copy in a password manager or secrets service, separate from the database and its backups.
+- **Rotating the master key.** Put the new key first and keep the old one: `ENCRYPTION_KEYS=2:<new>,1:<old>`. On the next start, every user's key is re-wrapped with the newest master key, and you can then remove the old entry. Users' own data is not re-encrypted, so rotation is quick.
+- **In development**, with no `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key` (default `.data`, ignored by git). Keep it next to the embedded database it belongs to: deleting it makes your local data unreadable.
+- **Upgrading from a version without encryption.** Existing data is encrypted automatically at the first start, and the readable copy is cleared. Back up your database first.
+- **Backups.** A backup holds the data only in encrypted form, so it is unreadable without the master key. It also holds the wrapped keys of users who were deleted after it was taken, so deleting an account does not erase it from older backups. Set a retention period on backups and state it in your Privacy Policy.
 
 ## Pages
 
@@ -189,6 +229,7 @@ To run a server you host yourself on your own domain, a Cloudflare Tunnel (`clou
 - **Free models are slow and not private.** A journey takes 2 to 5 minutes on a free reasoning model, and free tiers may log or train on what you send. Use a paid model with suitable data terms for real users.
 - **Some job sites block reading.** LinkedIn, Workday and similar sites often refuse automated requests. Paste the job description instead.
 - **Rate limits are per instance.** Sign-in and upload rate limits are kept in memory, so with several instances each one limits on its own. The daily journey limit is stored in the database and applies across instances.
+- **Encryption is not end-to-end.** The server decrypts a user's data to work with it and to send it to the AI model, so the operator can technically read it. See [Encryption](#encryption).
 - **Scanned documents need a vision model.** Without `LLM_VISION=true`, a PDF with no text layer can't be read.
 - **Only Google and Okta sign-in.** Other OpenID Connect providers need a small code change in `internal/auth`.
 - **English only.** Prompts and the UI are written in English.

@@ -97,8 +97,8 @@ export function Privacy() {
       <p>
         To read a document, its content (and, for PDFs, images of its pages) is sent to an AI model. To write a journey, your profile summary, the job
         description and your notes are sent to an AI model. Your sign-in details (email, picture{l.birthday ? ", birthday" : ""}) are not sent, but the
-        documents you add may contain your contact details and are sent as they are. <Models m={session.models} /> The model and its label are shown before you
-        send anything.
+        documents you add may contain your contact details and are sent as they are. Our servers decrypt your stored data to do this (see section 7).{" "}
+        <Models m={session.models} /> The model and its label are shown before you send anything.
       </p>
       <p>
         The AI provider processes your data under its own terms, and <b>how your data is handled there depends on the model</b>. Providers may keep inputs for a
@@ -125,15 +125,30 @@ export function Privacy() {
       <h2>7. Security</h2>
       <p>
         Data is encrypted in transit (HTTPS). The database keeps each person&apos;s data separate, so one user can&apos;t read another&apos;s. Session tokens are
-        stored only in hashed form, and we keep as little as we can. No system is perfectly secure. If a breach is likely to cause you significant harm, we will
-        tell you and the regulator as the law requires.
+        stored only in hashed form, and we keep as little as we can.
+      </p>
+      <p>
+        <b>Encryption at rest.</b> The personal content we store is encrypted in our database with a key made for you alone: your sign-in details (email, name,
+        picture link{l.birthday ? ", birthday" : ""}), your profile, the names, links and summaries of your documents, your job applications (links, descriptions,
+        notes, journeys and notes about people), and any file waiting to be read. Your key is itself encrypted with a master key that we keep separate from the
+        database, so a copy of the database or of a backup can&apos;t be read without it. Deleting your account deletes your key.
+      </p>
+      <p>
+        <b>What is not encrypted.</b> Information the site needs to work or that holds no personal content stays readable: job titles and company names, the type
+        and status of items, dates, your language setting, your consent choices, short progress messages of background tasks (deleted an hour after they finish),
+        and server logs.
+      </p>
+      <p>
+        <b>The limits of this.</b> This is not end-to-end encryption. Our servers decrypt your data to work for you, for example to show it to you or to send it to
+        the AI model (section 4), so people with access to our running systems and our master key could read it. No system is perfectly secure. If a breach is
+        likely to cause you significant harm, we will tell you and the regulator as the law requires.
       </p>
 
       <h2>8. How long we keep it</h2>
       <p>
         We keep your data while your account exists. Removing a document removes what it added to your profile. Deleting a job deletes its journey, progress and
-        notes. Deleting your account removes everything above from our live database at once. Backups kept by our hosting provider may hold copies for a limited
-        time until they expire, and server logs are kept for a limited period for security.
+        notes. Deleting your account removes everything above, and your encryption key, from our live database at once. Backups kept by our hosting provider may
+        hold copies (and the keys that go with them) for a limited time until they expire, and server logs are kept for a limited period for security.
       </p>
 
       <h2>9. Your rights</h2>
