@@ -50,16 +50,19 @@ type Config struct {
 	Production  bool
 	DatabaseURL string
 	DataDir     string
-	Google      OAuth
-	Okta        OAuth
-	DevLogin    bool
-	TrustProxy  bool // honour X-Forwarded-For for rate limiting (set behind a proxy)
-	DailyLimit  int
-	LLM         LLM      // the default model
-	DocsLLM     LLM      // reads resumes, documents and links (DOCS_LLM_*, else the default)
-	JourneyLLM  LLM      // analyses job posts and writes journeys (JOURNEY_LLM_*, else the default)
-	Choices     []Choice // models users can pick per upload or job (ANTHROPIC_*, OPENROUTER_*)
-	Legal       Legal
+	// EncryptionKeys are the master keys that wrap each user's data key:
+	// "version:base64key" entries, comma-separated. Required in production.
+	EncryptionKeys string
+	Google         OAuth
+	Okta           OAuth
+	DevLogin       bool
+	TrustProxy     bool // honour X-Forwarded-For for rate limiting (set behind a proxy)
+	DailyLimit     int
+	LLM            LLM      // the default model
+	DocsLLM        LLM      // reads resumes, documents and links (DOCS_LLM_*, else the default)
+	JourneyLLM     LLM      // analyses job posts and writes journeys (JOURNEY_LLM_*, else the default)
+	Choices        []Choice // models users can pick per upload or job (ANTHROPIC_*, OPENROUTER_*)
+	Legal          Legal
 	// GoogleBirthday requests the user's birthday from Google (a sensitive scope that
 	// needs Google's app verification in production). Off by default: see README.
 	GoogleBirthday bool
@@ -97,14 +100,15 @@ func Load() (*Config, error) {
 
 	port := env("PORT", "3000")
 	c := &Config{
-		Production:  env("APP_ENV", "development") == "production",
-		DatabaseURL: env("DATABASE_URL", ""),
-		DataDir:     env("DATA_DIR", ".data"),
-		DevLogin:    envBool("DEV_LOGIN"),
-		TrustProxy:  envBool("TRUST_PROXY"),
-		DailyLimit:  envInt("GENERATION_DAILY_LIMIT", 3),
-		Google:      OAuth{ID: env("AUTH_GOOGLE_ID", ""), Secret: env("AUTH_GOOGLE_SECRET", "")},
-		Okta:        OAuth{ID: env("AUTH_OKTA_ID", ""), Secret: env("AUTH_OKTA_SECRET", ""), Issuer: strings.TrimRight(env("AUTH_OKTA_ISSUER", ""), "/")},
+		Production:     env("APP_ENV", "development") == "production",
+		DatabaseURL:    env("DATABASE_URL", ""),
+		DataDir:        env("DATA_DIR", ".data"),
+		EncryptionKeys: env("ENCRYPTION_KEYS", ""),
+		DevLogin:       envBool("DEV_LOGIN"),
+		TrustProxy:     envBool("TRUST_PROXY"),
+		DailyLimit:     envInt("GENERATION_DAILY_LIMIT", 3),
+		Google:         OAuth{ID: env("AUTH_GOOGLE_ID", ""), Secret: env("AUTH_GOOGLE_SECRET", "")},
+		Okta:           OAuth{ID: env("AUTH_OKTA_ID", ""), Secret: env("AUTH_OKTA_SECRET", ""), Issuer: strings.TrimRight(env("AUTH_OKTA_ISSUER", ""), "/")},
 		Legal: Legal{
 			Operator:     env("LEGAL_OPERATOR", ""),
 			Contact:      env("LEGAL_CONTACT_EMAIL", ""),
@@ -126,6 +130,9 @@ func Load() (*Config, error) {
 		}
 		if c.DatabaseURL == "" {
 			return nil, errors.New("APP_ENV=production requires DATABASE_URL")
+		}
+		if c.EncryptionKeys == "" {
+			return nil, errors.New("APP_ENV=production requires ENCRYPTION_KEYS (generate one with: openssl rand -base64 32)")
 		}
 		if c.DevLogin {
 			return nil, errors.New("DEV_LOGIN must not be enabled in production")

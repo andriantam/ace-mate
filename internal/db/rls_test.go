@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/andriantam/ace-mate/internal/crypt"
 	"github.com/andriantam/ace-mate/internal/db"
 	"github.com/andriantam/ace-mate/internal/model"
 )
@@ -21,7 +23,7 @@ func openTestDB(t *testing.T) *db.DB {
 	ctx := context.Background()
 	url := os.Getenv("TEST_DATABASE_URL")
 	dir := t.TempDir()
-	d, err := db.Open(ctx, url, dir, false)
+	d, err := db.Open(ctx, url, dir, false, testKeys(t))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -215,4 +217,13 @@ func TestIdentityAndSessions(t *testing.T) {
 		t.Fatal("logout must revoke the session")
 	}
 	_ = time.Now
+}
+
+func testKeys(t *testing.T) *crypt.Keyring {
+	t.Helper()
+	k, err := crypt.NewKeyring(1, bytes.Repeat([]byte{7}, crypt.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }

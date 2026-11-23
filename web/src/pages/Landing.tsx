@@ -15,7 +15,7 @@ export function Landing() {
       <div className="grid3">
         <div className="card"><b>Stack, bridged</b><p className="muted" style={{ fontSize: 14 }}>New stacks explained in terms of the ones you already know, plus a GitHub capstone project.</p></div>
         <div className="card"><b>Industry &amp; people</b><p className="muted" style={{ fontSize: 14 }}>How the business works, &quot;what would you do&quot; scenarios, and research tasks to find out who you&apos;ll face.</p></div>
-        <div className="card"><b>Private by default</b><p className="muted" style={{ fontSize: 14 }}>Your data is visible only to you, enforced in the database. Export or delete it at any time.</p></div>
+        <div className="card"><b>Private by default</b><p className="muted" style={{ fontSize: 14 }}>Your data is kept apart from other users and encrypted with a key of your own. Export or delete it at any time.</p></div>
       </div>
     </div>
   );

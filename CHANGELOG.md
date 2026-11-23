@@ -8,6 +8,17 @@ All notable changes to AceMate are listed here. The format follows
 
 ### Added
 
+- Every user now has their own encryption key. It is created with the account, and the database stores it only encrypted by a master key held outside the database (the new `ENCRYPTION_KEYS` setting, required in production).
+- Deleting an account deletes the user's key first.
+- Master keys can be rotated: add a new version to `ENCRYPTION_KEYS` and restart. Users' keys are re-encrypted with the newest master key at startup, and existing users without a key get one.
+- In development, without `ENCRYPTION_KEYS`, a key is created once in `DATA_DIR/encryption.key`.
+- Each user's personal content is now stored encrypted with their own key: the profile, every document's name, link, extracted details and cross-check, each job's link, notes, posting text, journey and person cards, and uploaded files waiting to be read. Each value is tied to its row, so a value copied elsewhere can't be decrypted. The job title and company stay readable, so the jobs list can show and sort them.
+- The personal details your sign-in provider shares (email, name, photo link and birthday) are stored encrypted too.
+- The README has a new Encryption section: how keys work, what is and isn't encrypted, what it protects against, and how to set, back up and rotate `ENCRYPTION_KEYS`. The Privacy Policy now describes encryption at rest and its limits, and the landing page no longer says data is "visible only to you".
+- The Privacy Policy security section now states the facts: the measures used (HTTPS, per-user encryption at rest, row-level security, short retention), what the encryption means in practice (a copied database, a backup or a direct database connection shows encrypted values that need the master key to read), and what it doesn't (it is not end-to-end, the people who hold the master key could technically read the data, and it doesn't apply to what is sent to the AI provider). It lists what stays readable. The policy version is now 3.
+- The sign-up screen no longer says "Only you can see it".
+- Docker Compose needs `ENCRYPTION_KEYS` in `.env`: its container can't keep a generated key, so without one it stops with a message saying what to set.
+- Data saved by an earlier version is encrypted automatically at the first start, and the readable copy is cleared. Nobody has to sign up again.
 - Choose the AI model for each document upload and each job application. Set `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` and a picker appears, with each model's Secure / Not secure label. The pick is stored with the task and the job, so retries use the same model. Migration `0003` adds the columns.
 - The server logs which model reads each document.
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/andriantam/ace-mate/internal/auth"
 	"github.com/andriantam/ace-mate/internal/config"
+	"github.com/andriantam/ace-mate/internal/crypt"
 	"github.com/andriantam/ace-mate/internal/db"
 	"github.com/andriantam/ace-mate/internal/engine"
 	"github.com/andriantam/ace-mate/internal/httpapi"
@@ -136,7 +137,11 @@ func TestConsentAndResumeFlow(t *testing.T) {
 		t.Skip("needs the embedded Postgres")
 	}
 	ctx := context.Background()
-	d, err := db.Open(ctx, "", t.TempDir(), false)
+	keys, err := crypt.NewKeyring(1, make([]byte, crypt.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := db.Open(ctx, "", t.TempDir(), false, keys)
 	if err != nil {
 		t.Fatal(err)
 	}

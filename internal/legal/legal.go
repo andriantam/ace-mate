@@ -8,7 +8,7 @@ package legal
 
 // Version is the current Terms and Privacy Policy version. Change it (and Effective)
 // whenever either document changes materially: every user is then asked to accept again.
-const Version = "2"
+const Version = "3"
 
 // Effective is the date the current version took effect (YYYY-MM-DD).
-const Effective = "2026-11-21"
+const Effective = "2026-11-23"

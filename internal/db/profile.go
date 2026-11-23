@@ -16,32 +16,49 @@ type ProfileRow struct {
 }
 
 func (d *DB) GetProfile(ctx context.Context, userID string) (*ProfileRow, error) {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	var out *ProfileRow
-	err := d.WithUser(ctx, userID, func(tx pgx.Tx) error {
-		// Scan into a pointer so a legacy row with data IS NULL reads as "no profile"
-		// instead of failing the whole request.
-		var data *model.Profile
-		err := tx.QueryRow(ctx, `SELECT data FROM profile WHERE user_id=$1`, userID).Scan(&data)
+	err = d.WithUser(ctx, userID, func(tx pgx.Tx) error {
+		var r ProfileRow
+		var enc []byte
+		var plain *model.Profile // rows written before encryption, until the startup pass
+		err := tx.QueryRow(ctx, `SELECT data_enc, data FROM profile WHERE user_id=$1`, userID).Scan(&enc, &plain)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if data == nil {
-			return nil
+		if ok, err := s.openJSON("profile.data", userID, enc, &r.Data); err != nil {
+			return err
+		} else if !ok {
+			if plain == nil { // a legacy row with no data reads as "no profile"
+				return nil
+			}
+			r.Data = *plain
 		}
-		out = &ProfileRow{Data: *data}
+		out = &r
 		return nil
 	})
 	return out, err
 }
 
 func (d *DB) UpsertProfile(ctx context.Context, userID string, p model.Profile) error {
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+	enc, err := s.json("profile.data", userID, p)
+	if err != nil {
+		return err
+	}
 	return d.WithUser(ctx, userID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO profile (user_id,data) VALUES ($1,$2)
-			ON CONFLICT (user_id) DO UPDATE SET data=EXCLUDED.data, updated_at=now()`, userID, p)
+			INSERT INTO profile (user_id,data,data_enc) VALUES ($1,NULL,$2)
+			ON CONFLICT (user_id) DO UPDATE SET data=NULL, data_enc=EXCLUDED.data_enc, updated_at=now()`, userID, enc)
 		return err
 	})
 }
