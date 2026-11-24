@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sync"
 
@@ -145,6 +146,7 @@ func structured[T any](ctx context.Context, e *Engine, c call, validate func(*T)
 		}
 		return out, nil
 	}
+	slog.Warn("model reply rejected after every attempt", "model", e.P.Model(), "attempts", maxAttempts, "lastReason", lastErr)
 	return zero, &UserError{Msg: "The AI returned an unexpected format. Try again, or try a more capable model."}
 }
 

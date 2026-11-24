@@ -2,6 +2,7 @@
 #
 #   cp .env.example .env      # add your sign-in and AI model settings, and set
 #                             # BASE_URL=http://localhost:8080 (this file serves port 8080)
+#                             # ENCRYPTION_KEYS=1:<output of: openssl rand -base64 32>
 #   docker compose up --build
 #
 # Then open http://localhost:8080. For a public deployment, use a managed Postgres and
@@ -12,7 +13,7 @@ services:
     build:
       context: .
       args:
-        VERSION: ${VERSION:-27.0.1}
+        VERSION: ${VERSION:-27.1.0}
     env_file:
       - path: .env
         required: false
@@ -22,6 +23,9 @@ services:
       BASE_URL: ${BASE_URL:-http://localhost:8080}
       PORT: "8080"
       DATABASE_URL: postgres://acemate:acemate@db:5432/acemate?sslmode=disable
+      # Master key for encrypting each user's data (see README, Encryption). Set it in .env.
+      # The container can't keep a generated development key, so the app won't start without it.
+      ENCRYPTION_KEYS: ${ENCRYPTION_KEYS:-}
     ports:
       - "8080:8080"
     depends_on:

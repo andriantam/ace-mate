@@ -22,12 +22,14 @@ type Task struct {
 	Attempts    int    // including the current one
 	MaxAttempts int
 	Input       []byte
+	Engine      string // the model the user picked; "" is the site default
 }
 
 // NewTask describes work to enqueue.
 type NewTask struct {
 	UserID, Kind, Subject string
 	Input                 []byte
+	Engine                string
 	MaxAttempts           int // 0 means 3
 }
 
@@ -36,14 +38,22 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 	if t.MaxAttempts <= 0 {
 		t.MaxAttempts = 3
 	}
+	s, err := d.sealerFor(ctx, t.UserID)
+	if err != nil {
+		return "", err
+	}
+	id := newUUID()
+	input, err := s.bytes("task.input", id, t.Input)
+	if err != nil {
+		return "", err
+	}
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	var id string
-	if err := tx.QueryRow(ctx, `INSERT INTO task (user_id,kind,subject,input,max_attempts) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		t.UserID, t.Kind, t.Subject, t.Input, t.MaxAttempts).Scan(&id); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO task (id,user_id,kind,subject,input_enc,max_attempts,engine) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		id, t.UserID, t.Kind, t.Subject, input, t.MaxAttempts, t.Engine); err != nil {
 		return "", err
 	}
 	if first != nil {
@@ -59,6 +69,7 @@ func (d *DB) Enqueue(ctx context.Context, t NewTask, first map[string]any) (stri
 // and leases the task until now+lease. It returns nil when there is nothing to do.
 func (d *DB) Claim(ctx context.Context, kinds []string, lease time.Duration) (*Task, error) {
 	var t Task
+	var enc []byte
 	err := d.Pool.QueryRow(ctx, `
 		UPDATE task SET status='running', attempts=attempts+1, lease_until=now()+make_interval(secs => $2), updated_at=now()
 		WHERE id = (
@@ -69,13 +80,24 @@ func (d *DB) Claim(ctx context.Context, kinds []string, lease time.Duration) (*T
 			ORDER BY run_after
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1)
-		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input`,
-		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &t.Input)
+		RETURNING id, user_id, kind, subject::text, attempts, max_attempts, input_enc, input, engine`,
+		kinds, lease.Seconds()).Scan(&t.ID, &t.UserID, &t.Kind, &t.Subject, &t.Attempts, &t.MaxAttempts, &enc, &t.Input, &t.Engine)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if enc != nil {
+		// A task whose input can't be decrypted (its owner was deleted meanwhile) is still
+		// returned, with no input, so the worker finishes it instead of retrying forever.
+		s, err := d.sealerFor(ctx, t.UserID)
+		if err == nil {
+			t.Input, err = s.openBytes("task.input", t.ID, enc)
+		}
+		if err != nil {
+			t.Input = nil
+		}
 	}
 	return &t, nil
 }
@@ -98,7 +120,7 @@ func (d *DB) FinishTask(ctx context.Context, id string, failed bool, msg string)
 	if failed {
 		status = "failed"
 	}
-	_, err := d.Pool.Exec(ctx, `UPDATE task SET status=$2, last_error=NULLIF($3,''), input=NULL, lease_until=NULL, updated_at=now() WHERE id=$1`, id, status, msg)
+	_, err := d.Pool.Exec(ctx, `UPDATE task SET status=$2, last_error=NULLIF($3,''), input=NULL, input_enc=NULL, lease_until=NULL, updated_at=now() WHERE id=$1`, id, status, msg)
 	return err
 }
 
@@ -124,10 +146,11 @@ type TaskProgress struct {
 }
 
 // Progress returns the events after `after` of the latest task the user started on subject.
+// Linking shared prep (kind "share") runs quietly after a journey and is not reported.
 func (d *DB) Progress(ctx context.Context, userID, subject string, after int64) (TaskProgress, error) {
 	out := TaskProgress{Next: after, Events: []json.RawMessage{}}
 	var taskID, status string
-	err := d.Pool.QueryRow(ctx, `SELECT id, status FROM task WHERE user_id=$1 AND subject=$2 ORDER BY created_at DESC LIMIT 1`,
+	err := d.Pool.QueryRow(ctx, `SELECT id, status FROM task WHERE user_id=$1 AND subject=$2 AND kind <> 'share' ORDER BY created_at DESC LIMIT 1`,
 		userID, subject).Scan(&taskID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil

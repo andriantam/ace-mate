@@ -58,11 +58,13 @@ func (s *Server) setProgress(w http.ResponseWriter, r *http.Request, u *db.User)
 		writeErr(w, http.StatusBadRequest, "Invalid item.")
 		return
 	}
-	if err := s.db.SetProgress(r.Context(), u.ID, id, req.Item, req.Done); err != nil {
+	// A shared task is ticked in every journey it's linked to: changed lists them all.
+	changed, err := s.db.SetProgress(r.Context(), u.ID, id, req.Item, req.Done)
+	if err != nil {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "changed": changed})
 }
 
 func (s *Server) savePeople(w http.ResponseWriter, r *http.Request, u *db.User) {

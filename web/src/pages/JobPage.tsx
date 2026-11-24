@@ -24,7 +24,7 @@ export function JobPage() {
 
   // Before the outline exists, show the full progress screen. Once it does, show the journey
   // itself with placeholders for the parts still being written.
-  if (job.status === "pending" && !job.journey) return <JourneyProgress jobId={job.id} onFinished={load} onUpdate={load} />;
+  if (job.status === "pending" && !job.journey) return <JourneyProgress jobId={job.id} engine={job.engine} onFinished={load} onUpdate={load} />;
   const fill = () => api.fillJob(job.id).then(() => setJob({ ...job, status: "pending" }), (e) => setError(e.message));
   if (job.journey && (job.status === "pending" || job.status === "ready")) {
     const building = job.status === "pending";
@@ -36,9 +36,10 @@ export function JobPage() {
         journey={job.journey}
         initialProgress={job.progress}
         initialPeople={job.people}
+        shared={job.shared}
         building={building}
         onFill={fill}
-        banner={building ? <JourneyProgress compact jobId={job.id} onFinished={load} onUpdate={load} /> : null}
+        banner={building ? <JourneyProgress compact jobId={job.id} engine={job.engine} onFinished={load} onUpdate={load} /> : null}
       />
     );
   }
@@ -54,5 +55,5 @@ export function JobPage() {
       </div>
     );
   }
-  return <JourneyView key={job.id} jobId={job.id} url={job.url} journey={job.journey} initialProgress={job.progress} initialPeople={job.people} />;
+  return <JourneyView key={job.id} jobId={job.id} url={job.url} journey={job.journey} initialProgress={job.progress} initialPeople={job.people} shared={job.shared} />;
 }

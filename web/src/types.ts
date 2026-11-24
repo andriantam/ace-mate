@@ -64,6 +64,9 @@ export interface Engine {
   host?: string; // where resume data is sent
   privacy?: "secure" | "not_secure";
   vision?: boolean; // can read page images (OCR)
+  id?: string; // set on entries of `options`: sent back to choose this model
+  options?: Engine[]; // present when the operator configured several models the user can pick from
+  defaultId?: string; // the pre-selected entry of `options`
 }
 export interface Legal {
   version: string;
@@ -91,7 +94,26 @@ export interface Dashboard { profile: { data: Profile } | null; jobs: JobCard[];
 export interface Job {
   id: string; url: string; title: string; status: "pending" | "ready" | "failed"; error: string;
   journey: Journey | null; progress: Progress; people: People;
+  engine?: Engine; // the model the user picked for this journey
+  shared?: Record<string, SharedRef>; // keyed by ref: "<node>:<i>" for a task, "<node>:q<i>" for an HR question
 }
+
+// ── Prep shared across jobs ──
+/** A task or HR question this job shares with the user's other jobs. */
+export interface SharedRef {
+  id: string;
+  kind: "task" | "hr";
+  label: string;
+  answer?: string; // HR questions: the user's own answer
+  others: { jobId: string; title: string; ref: string }[];
+}
+/** A progress item that changed, in any job (ticking a shared task ticks it everywhere). */
+export type Ticked = { jobId: string; item: string };
+export interface PrepPlace { jobId: string; title: string; nodeId: string; text: string; tip?: string }
+export interface PrepItem {
+  id: string; kind: "task" | "hr"; key: string; label: string; done: boolean; answer: string; places: PrepPlace[];
+}
+export interface Prep { items: PrepItem[]; unlinked: number; matching: boolean }
 
 export interface Verification {
   methods: ("text" | "visual" | "pdf")[];
@@ -106,3 +128,9 @@ export interface Verification {
 
 /** Whether two tools use the same model at the same host. */
 export const sameModel = (a: Engine, b: Engine) => a.enabled && b.enabled && a.model === b.model && a.host === b.host;
+
+/** The model a tool will use: the user's pick from `options`, else the pre-selected one, else the tool's own default. */
+export function resolveEngine(e: Engine, choice: string): Engine {
+  const list = e.options ?? [];
+  return list.find((o) => o.id === choice) ?? list.find((o) => o.id === e.defaultId) ?? e;
+}

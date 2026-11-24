@@ -16,6 +16,21 @@ function ModelName({ e }: { e: Engine }) {
 }
 
 function Models({ m }: { m: { documents: Engine; journeys: Engine } }) {
+  const options = m.documents.options ?? m.journeys.options ?? [];
+  if (options.length > 1) {
+    return (
+      <>
+        On this site you choose the model for each document and each job application, from:{" "}
+        {options.map((o, i) => (
+          <span key={o.id}>
+            {i ? "; " : ""}
+            <ModelName e={o} />
+          </span>
+        ))}
+        .
+      </>
+    );
+  }
   if (!m.documents.enabled && !m.journeys.enabled) return <>No AI model is configured on this site at the moment, so nothing is sent to one.</>;
   if (sameModel(m.documents, m.journeys)) {
     return (
@@ -97,8 +112,8 @@ export function Privacy() {
       <p>
         To read a document, its content (and, for PDFs, images of its pages) is sent to an AI model. To write a journey, your profile summary, the job
         description and your notes are sent to an AI model. Your sign-in details (email, picture{l.birthday ? ", birthday" : ""}) are not sent, but the
-        documents you add may contain your contact details and are sent as they are. <Models m={session.models} /> The model and its label are shown before you
-        send anything.
+        documents you add may contain your contact details and are sent as they are. Our servers decrypt your stored data to do this (see section 7).{" "}
+        <Models m={session.models} /> The model and its label are shown before you send anything.
       </p>
       <p>
         The AI provider processes your data under its own terms, and <b>how your data is handled there depends on the model</b>. Providers may keep inputs for a
@@ -123,17 +138,57 @@ export function Privacy() {
       </p>
 
       <h2>7. Security</h2>
+      <p>These are the security measures AceMate uses.</p>
+      <ul>
+        <li>
+          <b>In transit:</b> traffic between your browser and our servers uses HTTPS.
+        </li>
+        <li>
+          <b>At rest:</b> the personal content we store is encrypted in our database (AES-256) with a key made for you alone. This covers your sign-in details
+          (email, name, picture link{l.birthday ? ", birthday" : ""}), your profile, the names, links and summaries of your documents, your job applications
+          (links, descriptions, notes, journeys and notes about people), and any file waiting to be read.
+        </li>
+        <li>
+          <b>Keys:</b> your key is stored in our database in encrypted form. It is locked with a master key that is kept in the server&apos;s configuration, not
+          in the database.
+        </li>
+        <li>
+          <b>Separation of users:</b> the database is set up so that queries made for one account only reach that account&apos;s records (row-level security).
+        </li>
+        <li>
+          <b>Retention:</b> an uploaded file is deleted once it has been read, and progress messages of background tasks an hour after a task finishes. We don&apos;t
+          keep your password or your sign-in provider&apos;s tokens, and session tokens are stored only in hashed form.
+        </li>
+        <li>
+          <b>Advertising and sales:</b> we use no advertising or analytics cookies, and we never sell your data.
+        </li>
+      </ul>
       <p>
-        Data is encrypted in transit (HTTPS). The database keeps each person&apos;s data separate, so one user can&apos;t read another&apos;s. Session tokens are
-        stored only in hashed form, and we keep as little as we can. No system is perfectly secure. If a breach is likely to cause you significant harm, we will
-        tell you and the regulator as the law requires.
+        <b>What the encryption means in practice.</b>
+      </p>
+      <ul>
+        <li>Someone who copies our database or a backup, or who connects to the database directly, sees encrypted values for the content listed above. Reading them takes the master key.</li>
+        <li>Each person has their own key, and each value is tied to the record it belongs to, so a value copied to another account or record can&apos;t be decrypted there.</li>
+        <li>Deleting your account deletes your key from our live database. Backups are covered in section 8.</li>
+      </ul>
+      <p>
+        <b>What it doesn&apos;t mean.</b> This is not end-to-end encryption. Our servers decrypt your data to work for you, for example to show it to you or to send
+        it to the AI model (section 4), so the people who run AceMate and hold the master key could technically read it. The encryption applies to data stored in
+        our database. It does not apply to what is sent to the AI provider, which handles it under its own terms.
+      </p>
+      <p>
+        <b>What is not encrypted.</b> Job titles and company names, the type and status of items, dates, error messages, your language setting, whether your email
+        is verified, your consent choices, progress messages of background tasks, and server logs are stored readable.
+      </p>
+      <p>
+        No system is perfectly secure. If a breach is likely to cause you significant harm, we will tell you and the regulator as the law requires.
       </p>
 
       <h2>8. How long we keep it</h2>
       <p>
         We keep your data while your account exists. Removing a document removes what it added to your profile. Deleting a job deletes its journey, progress and
-        notes. Deleting your account removes everything above from our live database at once. Backups kept by our hosting provider may hold copies for a limited
-        time until they expire, and server logs are kept for a limited period for security.
+        notes. Deleting your account removes everything above, and your encryption key, from our live database at once. Backups kept by our hosting provider may
+        hold copies (and the keys that go with them) for a limited time until they expire, and server logs are kept for a limited period for security.
       </p>
 
       <h2>9. Your rights</h2>

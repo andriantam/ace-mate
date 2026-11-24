@@ -15,6 +15,8 @@ type Export struct {
 	Profile    *ProfileRow   `json:"profile"`
 	Documents  []Document    `json:"documents"`
 	Jobs       []ExportedJob `json:"jobs"`
+	// Tasks and HR questions shared across jobs, with the user's own answers.
+	Shared []SharedItem `json:"shared"`
 }
 
 // ExportAccount is everything we hold about the user's identity and consent.
@@ -60,13 +62,27 @@ func (d *DB) ExportAll(ctx context.Context, userID string) (*Export, error) {
 	if out.Documents, err = d.ListDocuments(ctx, userID); err != nil {
 		return nil, err
 	}
+	if out.Shared, err = d.ListShared(ctx, userID); err != nil {
+		return nil, err
+	}
 	a := &out.Account
-	if err := d.Pool.QueryRow(ctx, `SELECT email,name,given_name,family_name,image,locale,birthday,email_verified,
+	var enc []byte
+	var plain personal
+	if err := d.Pool.QueryRow(ctx, `SELECT personal_enc,email,name,given_name,family_name,image,birthday,locale,email_verified,
 		terms_version,terms_accepted_at,marketing_opt_in,created_at FROM users WHERE id=$1`, userID).Scan(
-		&a.Email, &a.Name, &a.GivenName, &a.FamilyName, &a.Image, &a.Locale, &a.Birthday, &a.EmailVerified,
+		&enc, &plain.Email, &plain.Name, &plain.GivenName, &plain.FamilyName, &plain.Image, &plain.Birthday, &a.Locale, &a.EmailVerified,
 		&a.TermsVersion, &a.TermsAcceptedAt, &a.MarketingOptIn, &a.CreatedAt); err != nil {
 		return nil, err
 	}
+	s, err := d.sealerFor(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pd, err := openPersonal(s, enc, plain)
+	if err != nil {
+		return nil, err
+	}
+	a.Email, a.Name, a.GivenName, a.FamilyName, a.Image, a.Birthday = pd.Email, pd.Name, pd.GivenName, pd.FamilyName, pd.Image, pd.Birthday
 	rows, err := d.Pool.Query(ctx, `SELECT provider FROM accounts WHERE user_id=$1 ORDER BY provider`, userID)
 	if err != nil {
 		return nil, err

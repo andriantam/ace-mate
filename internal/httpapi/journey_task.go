@@ -27,6 +27,10 @@ func (s *Server) runJourney(ctx context.Context, t *db.Task, emit func(map[strin
 	if err != nil {
 		return err
 	}
+	eng, _, ok := s.pick(toolJourneys, job.Engine)
+	if !ok {
+		return worker.Permanent(&engine.UserError{Msg: "The AI model you chose is no longer available. Create the application again and pick another."})
+	}
 	profile, err := s.db.GetProfile(ctx, t.UserID)
 	if err != nil {
 		return err
@@ -54,13 +58,13 @@ func (s *Server) runJourney(ctx context.Context, t *db.Task, emit func(map[strin
 			}
 		}
 		emit(map[string]any{"type": "progress", "step": "fetched", "chars": len(jd)})
-		if j, err = s.journeys.GenerateJourney(ctx, profile.Data, jd, job.Notes, events, partial); err != nil {
+		if j, err = eng.GenerateJourney(ctx, profile.Data, jd, job.Notes, events, partial); err != nil {
 			return err
 		}
 	} else {
 		j = *job.Journey
 		j.Failed, j.Pending = append(j.Failed, j.Pending...), nil
-		j, err = s.journeys.FillJourney(ctx, profile.Data, job.JDText, job.Notes, j, events, partial)
+		j, err = eng.FillJourney(ctx, profile.Data, job.JDText, job.Notes, j, events, partial)
 		if err != nil && len(j.Failed) > 0 {
 			// Keep what was written; the next attempt carries on from here.
 			s.savePartial(context.WithoutCancel(ctx), t.UserID, t.Subject)(j)
@@ -70,8 +74,9 @@ func (s *Server) runJourney(ctx context.Context, t *db.Task, emit func(map[strin
 	if err := s.db.MarkJobReady(ctx, t.UserID, t.Subject, j); err != nil {
 		return err
 	}
-	slog.Info("journey written", "job", t.Subject, "seconds", int(time.Since(started).Seconds()), "model", s.journeys.P.Model(), "failedParts", len(j.Failed))
+	slog.Info("journey written", "job", t.Subject, "seconds", int(time.Since(started).Seconds()), "model", eng.P.Model(), "failedParts", len(j.Failed))
 	emit(map[string]any{"type": "done"})
+	s.queueShare(ctx, t.UserID, t.Subject)
 	return nil
 }
 
@@ -87,7 +92,9 @@ func (s *Server) journeyGaveUp(ctx context.Context, t *db.Task, msg string) {
 		j.Failed, j.Pending = append(j.Failed, j.Pending...), nil
 		if err := s.db.MarkJobReady(ctx, t.UserID, t.Subject, j); err != nil {
 			slog.Error("journey: keep partial", "job", t.Subject, "err", err)
+			return
 		}
+		s.queueShare(ctx, t.UserID, t.Subject)
 		return
 	}
 	if err := s.db.MarkJobFailed(ctx, t.UserID, t.Subject, msg); err != nil {
@@ -123,4 +130,11 @@ func userMessage(err error) string {
 		return fe.Msg
 	}
 	return "Something went wrong. Please try again."
+}
+
+// queueShare links a newly written journey to the user's other journeys, in the background.
+func (s *Server) queueShare(ctx context.Context, userID, jobID string) {
+	if err := s.enqueueShare(context.WithoutCancel(ctx), userID, jobID); err != nil {
+		slog.Warn("share: queue", "job", jobID, "err", err)
+	}
 }

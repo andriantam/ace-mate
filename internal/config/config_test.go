@@ -4,7 +4,7 @@ import "testing"
 
 func clear(t *testing.T) {
 	for _, k := range []string{"APP_ENV", "BASE_URL", "DATABASE_URL", "DEV_LOGIN", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY",
-		"ANTHROPIC_API_KEY", "LLM_STRUCTURED", "LLM_VISION", "LLM_RESUME_MODE", "LLM_PRIVACY", "LLM_DISPLAY_NAME", "LEGAL_CONTACT_EMAIL", "PORT", "ADDR", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"} {
+		"ANTHROPIC_API_KEY", "LLM_STRUCTURED", "LLM_VISION", "LLM_RESUME_MODE", "LLM_PRIVACY", "LLM_DISPLAY_NAME", "LEGAL_CONTACT_EMAIL", "PORT", "ADDR", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "ENCRYPTION_KEYS"} {
 		t.Setenv(k, "")
 	}
 }
@@ -25,6 +25,10 @@ func TestProductionGuards(t *testing.T) {
 		t.Error("production must refuse DEV_LOGIN")
 	}
 	t.Setenv("DEV_LOGIN", "")
+	if _, err := Load(); err == nil {
+		t.Error("production without ENCRYPTION_KEYS must fail")
+	}
+	t.Setenv("ENCRYPTION_KEYS", "1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	if _, err := Load(); err == nil {
 		t.Error("production without a privacy contact must fail")
 	}
