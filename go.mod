@@ -3,7 +3,7 @@ module github.com/andriantam/ace-mate
 go 1.26.0
 
 require (
-	github.com/anthropics/anthropic-sdk-go/v2 v2.13.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.15.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/invopop/jsonschema v0.14.0
